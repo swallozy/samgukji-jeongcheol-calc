@@ -1,0 +1,16 @@
+{
+  "name": "samgukji-jeongcheol-calc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "삼국지: 천하결전 W2 남군의 봉화 동맹 정철 수급·소모 계산기 (웹 + 디스코드 봇 공용 코어)",
+  "workspaces": [
+    "core",
+    "web"
+  ],
+  "scripts": {
+    "test": "node --test core/test/*.test.js",
+    "dev": "npm --workspace=web run dev",
+    "build": "npm --workspace=web run build",
+    "preview": "npm --workspace=web run preview"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@jeongcheol/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./w2Data": "./src/w2Data.js",
+    "./calculator": "./src/calculator.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}
