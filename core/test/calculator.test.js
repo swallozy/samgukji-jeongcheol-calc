@@ -358,4 +358,16 @@ test('resolveLiveAnchorStock mirrors 5-minute in-game ticks (820 -> 860 over 15m
   });
   assert.equal(tick3.completedTicks, 3);
   assert.equal(tick3.currentStock, 860);
+
+  // Mid-cycle entry (12:04:18) snaps to 12:00:00 clock grid -> ticks right at 12:05:00
+  const midEntry = resolveLiveAnchorStock({
+    anchorStock: 873,
+    anchorTimeMs: BASE_TIME + (4 * 60 + 18) * 1000,
+    nowMs: BASE_TIME + 5 * 60000,
+    baseHourlyRate: 160,
+    cap: 10000,
+    tickIntervalMinutes: 5,
+  });
+  assert.equal(midEntry.completedTicks, 1);
+  assert.equal(midEntry.currentStock, 886);
 });

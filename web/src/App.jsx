@@ -241,7 +241,8 @@ export function App() {
         baseHourlyRate: state.baseHourlyRate,
         cap: state.cap,
         boosts: state.boosts,
-        tickIntervalMinutes: state.tickIntervalMinutes ?? 5,
+        tickIntervalMinutes: 5,
+        alignToClockGrid: true,
       }),
     [
       state.anchorStock,
@@ -251,7 +252,6 @@ export function App() {
       state.baseHourlyRate,
       state.cap,
       state.boosts,
-      state.tickIntervalMinutes,
     ]
   );
 
@@ -279,12 +279,13 @@ export function App() {
         baseHourlyRate: prev.baseHourlyRate,
         cap: prev.cap,
         boosts: prev.boosts,
-        tickIntervalMinutes: prev.tickIntervalMinutes ?? 5,
+        tickIntervalMinutes: 5,
+        alignToClockGrid: true,
       });
       return {
         ...prev,
         anchorStock: snapshot.exactStock,
-        anchorTimeMs: now,
+        anchorTimeMs: snapshot.anchorSlotMs,
         ...buildPatch(prev),
       };
     });
@@ -385,7 +386,7 @@ export function App() {
     setLiveNowMs(now);
     updateState({
       anchorStock: nextStock,
-      anchorTimeMs: state.autoSyncEnabled ? now : state.anchorTimeMs,
+      anchorTimeMs: state.autoSyncEnabled ? Math.floor(now / 300000) * 300000 : state.anchorTimeMs,
     });
   };
 
@@ -404,7 +405,7 @@ export function App() {
       updateState({
         autoSyncEnabled: true,
         anchorStock: effectiveCurrentStock,
-        anchorTimeMs: now,
+        anchorTimeMs: Math.floor(now / 300000) * 300000,
       });
     } else {
       updateState({
@@ -413,16 +414,6 @@ export function App() {
         anchorTimeMs: now,
       });
     }
-  };
-
-  const handleResetBaseTimeNow = () => {
-    const now = Date.now();
-    setLiveNowMs(now);
-    updateState({
-      autoSyncEnabled: true,
-      anchorStock: effectiveCurrentStock,
-      anchorTimeMs: now,
-    });
   };
 
   const handleAddBoost = (boost) => {
@@ -640,14 +631,9 @@ export function App() {
           anchorStock={state.anchorStock}
           autoSyncEnabled={state.autoSyncEnabled}
           onToggleAutoSync={handleToggleAutoSync}
-          tickIntervalMinutes={state.tickIntervalMinutes ?? 5}
-          onTickIntervalChange={(tickIntervalMinutes) =>
-            updateWithSnapshot(() => ({ tickIntervalMinutes }))
-          }
           liveAnchor={liveAnchor}
           accumulatedGain={state.autoSyncEnabled ? liveAnchor.accumulatedGain : 0}
           onBaseTimeChange={handleBaseTimeChange}
-          onResetBaseTimeNow={handleResetBaseTimeNow}
           currentStock={effectiveCurrentStock}
           onCurrentStockChange={handleCurrentStockChange}
           baseHourlyRate={state.baseHourlyRate}

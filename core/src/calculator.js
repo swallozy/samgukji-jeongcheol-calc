@@ -455,8 +455,8 @@ export function calculateTargetReach({
 
 /**
  * 기준 시점(anchorTimeMs)과 기준 보유량(anchorStock)을 바탕으로
- * 현재 시각(nowMs) 기준의 실시간 누적 보유 정철을 계산합니다.
- * - tickIntervalMinutes > 0 (기본 5분): 인게임과 동일하게 N분이 경과할 때마다 일괄 정산
+ * 현재 시각(nowMs) 기준의 누적 보유 정철을 계산합니다.
+ * - tickIntervalMinutes > 0 (기본 5분): 고정 시계 주기(00·05·10...분)에 맞춰 일괄 정산
  * - tickIntervalMinutes === 0: 연속/실시간 정산
  */
 export function resolveLiveAnchorStock({
@@ -467,6 +467,7 @@ export function resolveLiveAnchorStock({
   cap = SEASON_META.defaultCap,
   boosts = [],
   tickIntervalMinutes = 5,
+  alignToClockGrid = true,
 } = {}) {
   const safeAnchorMs = toEpochMs(anchorTimeMs);
   const safeNowMs = toEpochMs(nowMs);
@@ -475,19 +476,47 @@ export function resolveLiveAnchorStock({
   const safeTickMinutes = Math.max(0, Number(tickIntervalMinutes) || 0);
   const tickMs = safeTickMinutes * MINUTE_MS;
 
-  if (effectiveNowMs <= effectiveAnchorMs) {
+  const anchorSlotMs =
+    tickMs > 0 && alignToClockGrid
+      ? Math.floor(effectiveAnchorMs / tickMs) * tickMs
+      : effectiveAnchorMs;
+  const nowSlotMs =
+    tickMs > 0 && alignToClockGrid
+      ? Math.floor(effectiveNowMs / tickMs) * tickMs
+      : effectiveNowMs;
+
+  if (effectiveNowMs <= effectiveAnchorMs || (tickMs > 0 && nowSlotMs <= anchorSlotMs)) {
     const safeCap = Math.max(1, clampNonNegative(cap, SEASON_META.defaultCap));
     const safeStock = Math.min(safeCap, clampNonNegative(anchorStock, 0));
+    const nextTick =
+      tickMs > 0
+        ? alignToClockGrid
+          ? nowSlotMs + tickMs
+          : effectiveAnchorMs + tickMs
+        : null;
+    const nextProjection =
+      nextTick !== null
+        ? calculateStockAtTime({
+            currentStock: safeStock,
+            baseHourlyRate,
+            cap: safeCap,
+            baseTime: anchorSlotMs,
+            targetTime: nextTick,
+            boosts,
+          })
+        : null;
+
     return {
       anchorTimeMs: effectiveAnchorMs,
+      anchorSlotMs,
       nowMs: effectiveNowMs,
-      evalTimeMs: effectiveAnchorMs,
+      evalTimeMs: anchorSlotMs,
       elapsedMs: 0,
       tickIntervalMinutes: safeTickMinutes,
       completedTicks: 0,
-      nextTickTimeMs: tickMs > 0 ? effectiveAnchorMs + tickMs : null,
-      msUntilNextTick: tickMs > 0 ? tickMs : null,
-      nextTickGain: 0,
+      nextTickTimeMs: nextTick,
+      msUntilNextTick: nextTick !== null ? Math.max(0, nextTick - effectiveNowMs) : null,
+      nextTickGain: nextProjection ? Math.max(0, nextProjection.projectedStock - Math.floor(safeStock)) : 0,
       currentStock: Math.floor(safeStock),
       exactStock: safeStock,
       accumulatedGain: 0,
@@ -496,16 +525,18 @@ export function resolveLiveAnchorStock({
     };
   }
 
-  const rawElapsedMs = effectiveNowMs - effectiveAnchorMs;
-  const completedTicks = tickMs > 0 ? Math.floor(rawElapsedMs / tickMs) : 0;
+  const completedTicks =
+    tickMs > 0
+      ? Math.max(0, Math.floor((nowSlotMs - anchorSlotMs) / tickMs))
+      : 0;
   const evalTimeMs =
-    tickMs > 0 ? effectiveAnchorMs + completedTicks * tickMs : effectiveNowMs;
+    tickMs > 0 ? anchorSlotMs + completedTicks * tickMs : effectiveNowMs;
 
   const projection = calculateStockAtTime({
     currentStock: anchorStock,
     baseHourlyRate,
     cap,
-    baseTime: effectiveAnchorMs,
+    baseTime: anchorSlotMs,
     targetTime: evalTimeMs,
     boosts,
   });
@@ -515,13 +546,13 @@ export function resolveLiveAnchorStock({
   let nextTickGain = 0;
 
   if (tickMs > 0) {
-    nextTickTimeMs = effectiveAnchorMs + (completedTicks + 1) * tickMs;
+    nextTickTimeMs = anchorSlotMs + (completedTicks + 1) * tickMs;
     msUntilNextTick = Math.max(0, nextTickTimeMs - effectiveNowMs);
     const nextProjection = calculateStockAtTime({
       currentStock: anchorStock,
       baseHourlyRate,
       cap,
-      baseTime: effectiveAnchorMs,
+      baseTime: anchorSlotMs,
       targetTime: nextTickTimeMs,
       boosts,
     });
@@ -530,6 +561,7 @@ export function resolveLiveAnchorStock({
 
   return {
     anchorTimeMs: effectiveAnchorMs,
+    anchorSlotMs,
     nowMs: effectiveNowMs,
     evalTimeMs,
     elapsedMs: projection.elapsedMs,

@@ -10,7 +10,6 @@ import {
   Gauge,
   Pause,
   Play,
-  RefreshCw,
   ShieldAlert,
   Target,
 } from 'lucide-react';
@@ -33,12 +32,9 @@ export function StatusPanel({
   anchorStock,
   autoSyncEnabled,
   onToggleAutoSync,
-  tickIntervalMinutes,
-  onTickIntervalChange,
   liveAnchor,
   accumulatedGain,
   onBaseTimeChange,
-  onResetBaseTimeNow,
   currentStock,
   onCurrentStockChange,
   baseHourlyRate,
@@ -148,46 +144,20 @@ export function StatusPanel({
           </h2>
           <p className="card-subtitle">
             {autoSyncEnabled
-              ? tickIntervalMinutes > 0
-                ? `인게임과 동일하게 ${tickIntervalMinutes}분 주기마다 정철이 일괄 정산됩니다. (기준: ${formatDateTimeKST(
-                    anchorTimeMs
-                  )} · ${Math.floor(anchorStock).toLocaleString()})`
-                : `기준점(${formatDateTimeKST(anchorTimeMs)} · ${Math.floor(
-                    anchorStock
-                  ).toLocaleString()}) 이후 연속으로 생산량이 누적됩니다.`
-              : '수동 고정 모드입니다. 실시간 자동 동기화를 켜면 시간 경과에 따라 보유 정철이 자동 갱신됩니다.'}
+              ? `매 5분(00·05·10분...) 고정 주기로 자동 정산됩니다. (기준: ${formatDateTimeKST(
+                  liveAnchor?.anchorSlotMs ?? anchorTimeMs
+                )} · ${Math.floor(anchorStock).toLocaleString()})`
+              : '수동 고정 모드입니다. 실시간 동기화를 켜면 매 5분 주기마다 보유 정철이 자동 갱신됩니다.'}
           </p>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
-          <div className="tabs" title="인게임 5분 단위 정산 또는 연속 계산 전환">
-            <button
-              type="button"
-              className={`tab-btn ${tickIntervalMinutes === 5 ? 'active' : ''}`}
-              style={{ padding: '5px 10px', fontSize: '12px' }}
-              onClick={() => onTickIntervalChange(5)}
-            >
-              5분 정산(인게임)
-            </button>
-            <button
-              type="button"
-              className={`tab-btn ${tickIntervalMinutes === 0 ? 'active' : ''}`}
-              style={{ padding: '5px 10px', fontSize: '12px' }}
-              onClick={() => onTickIntervalChange(0)}
-            >
-              연속 누적
-            </button>
-          </div>
           <button
             type="button"
             className="btn btn-sm"
             onClick={() => onToggleAutoSync(!autoSyncEnabled)}
           >
             {autoSyncEnabled ? <Pause size={14} /> : <Play size={14} color="#34d399" />}
-            {autoSyncEnabled ? '일시정지' : '실시간 켜기'}
-          </button>
-          <button type="button" className="btn btn-sm" onClick={onResetBaseTimeNow}>
-            <RefreshCw size={14} />
-            방금 정산 맞춤
+            {autoSyncEnabled ? '일시정지 (수동 고정)' : '실시간 5분 동기화 켜기'}
           </button>
         </div>
       </div>
@@ -239,14 +209,10 @@ export function StatusPanel({
           />
           {autoSyncEnabled && accumulatedGain > 0 && (
             <span className="muted-note num" style={{ color: '#6ee7b7' }}>
-              +{accumulatedGain.toLocaleString()} 자동 반영됨
-              {tickIntervalMinutes > 0 && liveAnchor?.completedTicks > 0
-                ? ` (${liveAnchor.completedTicks}회 정산)`
-                : ''}
+              +{accumulatedGain.toLocaleString()} 자동 반영됨 ({liveAnchor?.completedTicks ?? 0}회 정산)
             </span>
           )}
           {autoSyncEnabled &&
-            tickIntervalMinutes > 0 &&
             effectiveStartRate > 0 &&
             !liveAnchor?.reachedCap &&
             liveAnchor?.msUntilNextTick !== null && (
