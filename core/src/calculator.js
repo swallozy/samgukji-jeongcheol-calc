@@ -456,6 +456,8 @@ export function calculateTargetReach({
 /**
  * 기준 시점(anchorTimeMs)과 기준 보유량(anchorStock)을 바탕으로
  * 현재 시각(nowMs) 기준의 실시간 누적 보유 정철을 계산합니다.
+ * - tickIntervalMinutes > 0 (기본 5분): 인게임과 동일하게 N분이 경과할 때마다 일괄 정산
+ * - tickIntervalMinutes === 0: 연속/실시간 정산
  */
 export function resolveLiveAnchorStock({
   anchorStock = 0,
@@ -464,11 +466,14 @@ export function resolveLiveAnchorStock({
   baseHourlyRate = SEASON_META.defaultHourlyRate,
   cap = SEASON_META.defaultCap,
   boosts = [],
+  tickIntervalMinutes = 5,
 } = {}) {
   const safeAnchorMs = toEpochMs(anchorTimeMs);
   const safeNowMs = toEpochMs(nowMs);
   const effectiveNowMs = Number.isFinite(safeNowMs) ? safeNowMs : Date.now();
   const effectiveAnchorMs = Number.isFinite(safeAnchorMs) ? safeAnchorMs : effectiveNowMs;
+  const safeTickMinutes = Math.max(0, Number(tickIntervalMinutes) || 0);
+  const tickMs = safeTickMinutes * MINUTE_MS;
 
   if (effectiveNowMs <= effectiveAnchorMs) {
     const safeCap = Math.max(1, clampNonNegative(cap, SEASON_META.defaultCap));
@@ -476,7 +481,13 @@ export function resolveLiveAnchorStock({
     return {
       anchorTimeMs: effectiveAnchorMs,
       nowMs: effectiveNowMs,
+      evalTimeMs: effectiveAnchorMs,
       elapsedMs: 0,
+      tickIntervalMinutes: safeTickMinutes,
+      completedTicks: 0,
+      nextTickTimeMs: tickMs > 0 ? effectiveAnchorMs + tickMs : null,
+      msUntilNextTick: tickMs > 0 ? tickMs : null,
+      nextTickGain: 0,
       currentStock: Math.floor(safeStock),
       exactStock: safeStock,
       accumulatedGain: 0,
@@ -485,19 +496,48 @@ export function resolveLiveAnchorStock({
     };
   }
 
+  const rawElapsedMs = effectiveNowMs - effectiveAnchorMs;
+  const completedTicks = tickMs > 0 ? Math.floor(rawElapsedMs / tickMs) : 0;
+  const evalTimeMs =
+    tickMs > 0 ? effectiveAnchorMs + completedTicks * tickMs : effectiveNowMs;
+
   const projection = calculateStockAtTime({
     currentStock: anchorStock,
     baseHourlyRate,
     cap,
     baseTime: effectiveAnchorMs,
-    targetTime: effectiveNowMs,
+    targetTime: evalTimeMs,
     boosts,
   });
+
+  let nextTickTimeMs = null;
+  let msUntilNextTick = null;
+  let nextTickGain = 0;
+
+  if (tickMs > 0) {
+    nextTickTimeMs = effectiveAnchorMs + (completedTicks + 1) * tickMs;
+    msUntilNextTick = Math.max(0, nextTickTimeMs - effectiveNowMs);
+    const nextProjection = calculateStockAtTime({
+      currentStock: anchorStock,
+      baseHourlyRate,
+      cap,
+      baseTime: effectiveAnchorMs,
+      targetTime: nextTickTimeMs,
+      boosts,
+    });
+    nextTickGain = Math.max(0, nextProjection.projectedStock - projection.projectedStock);
+  }
 
   return {
     anchorTimeMs: effectiveAnchorMs,
     nowMs: effectiveNowMs,
+    evalTimeMs,
     elapsedMs: projection.elapsedMs,
+    tickIntervalMinutes: safeTickMinutes,
+    completedTicks,
+    nextTickTimeMs,
+    msUntilNextTick,
+    nextTickGain,
     currentStock: projection.projectedStock,
     exactStock: projection.exactProjected,
     accumulatedGain: projection.netGain,

@@ -49,6 +49,7 @@ function createInitialState(nowMs = Date.now()) {
     anchorStock: 1500,
     anchorTimeMs: roundedNow,
     autoSyncEnabled: true,
+    tickIntervalMinutes: 5,
     baseHourlyRate: SEASON_META.defaultHourlyRate,
     cap: SEASON_META.defaultCap,
     targetGoalAmount: 6000,
@@ -133,6 +134,10 @@ function normalizeLoadedState(parsed, fresh) {
       ? Number(parsed.anchorTimeMs)
       : nowMs,
     autoSyncEnabled: parsed.autoSyncEnabled !== undefined ? Boolean(parsed.autoSyncEnabled) : true,
+    tickIntervalMinutes:
+      parsed.tickIntervalMinutes !== undefined && Number.isFinite(Number(parsed.tickIntervalMinutes))
+        ? Number(parsed.tickIntervalMinutes)
+        : 5,
     singleTargetTimeMs,
     targetCheckTimeMs,
     rules: parsed.rules?.presets ? { ...fresh.rules, ...parsed.rules } : fresh.rules,
@@ -187,12 +192,12 @@ export function App() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
 
-  // 5초마다 및 탭 복귀 시 실시간 시각 동기화
+  // 1초마다 카운트다운 및 정산 시점 확인, 탭 복귀 시 즉시 동기화
   useEffect(() => {
     if (!state.autoSyncEnabled) return undefined;
 
     const tick = () => setLiveNowMs(Date.now());
-    const timer = setInterval(tick, 5000);
+    const timer = setInterval(tick, 1000);
     const onVisibility = () => {
       if (document.visibilityState === 'visible') tick();
     };
@@ -236,6 +241,7 @@ export function App() {
         baseHourlyRate: state.baseHourlyRate,
         cap: state.cap,
         boosts: state.boosts,
+        tickIntervalMinutes: state.tickIntervalMinutes ?? 5,
       }),
     [
       state.anchorStock,
@@ -245,10 +251,13 @@ export function App() {
       state.baseHourlyRate,
       state.cap,
       state.boosts,
+      state.tickIntervalMinutes,
     ]
   );
 
-  const effectiveBaseTimeMs = state.autoSyncEnabled ? liveNowMs : state.anchorTimeMs;
+  // 하위 시뮬레이션/PNG 카드는 분 단위로만 재계산해 1초 카운트다운 중 불필요한 캔버스 재렌더 방지
+  const minuteSyncedNowMs = Math.floor(liveNowMs / 60000) * 60000;
+  const effectiveBaseTimeMs = state.autoSyncEnabled ? minuteSyncedNowMs : state.anchorTimeMs;
   const effectiveCurrentStock = state.autoSyncEnabled
     ? liveAnchor.currentStock
     : Math.min(state.cap, Math.floor(state.anchorStock));
@@ -270,6 +279,7 @@ export function App() {
         baseHourlyRate: prev.baseHourlyRate,
         cap: prev.cap,
         boosts: prev.boosts,
+        tickIntervalMinutes: prev.tickIntervalMinutes ?? 5,
       });
       return {
         ...prev,
@@ -630,6 +640,11 @@ export function App() {
           anchorStock={state.anchorStock}
           autoSyncEnabled={state.autoSyncEnabled}
           onToggleAutoSync={handleToggleAutoSync}
+          tickIntervalMinutes={state.tickIntervalMinutes ?? 5}
+          onTickIntervalChange={(tickIntervalMinutes) =>
+            updateWithSnapshot(() => ({ tickIntervalMinutes }))
+          }
+          liveAnchor={liveAnchor}
           accumulatedGain={state.autoSyncEnabled ? liveAnchor.accumulatedGain : 0}
           onBaseTimeChange={handleBaseTimeChange}
           onResetBaseTimeNow={handleResetBaseTimeNow}

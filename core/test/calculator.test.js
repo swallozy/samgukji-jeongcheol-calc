@@ -320,3 +320,42 @@ test('resolveLiveAnchorStock accumulates elapsed hourly production automatically
   assert.equal(live.overflowLoss, 0);
   assert.equal(live.elapsedMs, 2 * 3600000);
 });
+
+test('resolveLiveAnchorStock mirrors 5-minute in-game ticks (820 -> 860 over 15m at 160/h)', () => {
+  // 4m 59s -> still 0 ticks (820), next tick gain +13
+  const beforeFirst = resolveLiveAnchorStock({
+    anchorStock: 820,
+    anchorTimeMs: BASE_TIME,
+    nowMs: BASE_TIME + (4 * 60 + 59) * 1000,
+    baseHourlyRate: 160,
+    cap: 10000,
+    tickIntervalMinutes: 5,
+  });
+  assert.equal(beforeFirst.completedTicks, 0);
+  assert.equal(beforeFirst.currentStock, 820);
+  assert.equal(beforeFirst.nextTickGain, 13);
+
+  // 5m 00s -> tick 1 (+13 -> 833)
+  const tick1 = resolveLiveAnchorStock({
+    anchorStock: 820,
+    anchorTimeMs: BASE_TIME,
+    nowMs: BASE_TIME + 5 * 60000,
+    baseHourlyRate: 160,
+    cap: 10000,
+    tickIntervalMinutes: 5,
+  });
+  assert.equal(tick1.completedTicks, 1);
+  assert.equal(tick1.currentStock, 833);
+
+  // 15m 00s -> tick 3 (+40 -> 860)
+  const tick3 = resolveLiveAnchorStock({
+    anchorStock: 820,
+    anchorTimeMs: BASE_TIME,
+    nowMs: BASE_TIME + 15 * 60000,
+    baseHourlyRate: 160,
+    cap: 10000,
+    tickIntervalMinutes: 5,
+  });
+  assert.equal(tick3.completedTicks, 3);
+  assert.equal(tick3.currentStock, 860);
+});
