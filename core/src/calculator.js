@@ -454,6 +454,59 @@ export function calculateTargetReach({
 }
 
 /**
+ * 기준 시점(anchorTimeMs)과 기준 보유량(anchorStock)을 바탕으로
+ * 현재 시각(nowMs) 기준의 실시간 누적 보유 정철을 계산합니다.
+ */
+export function resolveLiveAnchorStock({
+  anchorStock = 0,
+  anchorTimeMs = Date.now(),
+  nowMs = Date.now(),
+  baseHourlyRate = SEASON_META.defaultHourlyRate,
+  cap = SEASON_META.defaultCap,
+  boosts = [],
+} = {}) {
+  const safeAnchorMs = toEpochMs(anchorTimeMs);
+  const safeNowMs = toEpochMs(nowMs);
+  const effectiveNowMs = Number.isFinite(safeNowMs) ? safeNowMs : Date.now();
+  const effectiveAnchorMs = Number.isFinite(safeAnchorMs) ? safeAnchorMs : effectiveNowMs;
+
+  if (effectiveNowMs <= effectiveAnchorMs) {
+    const safeCap = Math.max(1, clampNonNegative(cap, SEASON_META.defaultCap));
+    const safeStock = Math.min(safeCap, clampNonNegative(anchorStock, 0));
+    return {
+      anchorTimeMs: effectiveAnchorMs,
+      nowMs: effectiveNowMs,
+      elapsedMs: 0,
+      currentStock: Math.floor(safeStock),
+      exactStock: safeStock,
+      accumulatedGain: 0,
+      overflowLoss: 0,
+      reachedCap: safeStock >= safeCap,
+    };
+  }
+
+  const projection = calculateStockAtTime({
+    currentStock: anchorStock,
+    baseHourlyRate,
+    cap,
+    baseTime: effectiveAnchorMs,
+    targetTime: effectiveNowMs,
+    boosts,
+  });
+
+  return {
+    anchorTimeMs: effectiveAnchorMs,
+    nowMs: effectiveNowMs,
+    elapsedMs: projection.elapsedMs,
+    currentStock: projection.projectedStock,
+    exactStock: projection.exactProjected,
+    accumulatedGain: projection.netGain,
+    overflowLoss: projection.overflowLoss,
+    reachedCap: projection.reachedCap,
+  };
+}
+
+/**
  * 연쇄 공성 타임라인 시뮬레이터
  * 첫 번째 성지를 점령하고 나면(step 0 이후) 동맹에 성지가 1개 이상 생기므로
  * allianceHasNoCities는 첫 유효 단계에만 적용되고 이후 단계부터는 성지 연결 규칙이 적용됩니다.

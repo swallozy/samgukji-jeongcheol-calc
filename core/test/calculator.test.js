@@ -9,6 +9,7 @@ import {
   calculateStockAtTime,
   calculateTargetReach,
   computeAutoEtaSchedule,
+  resolveLiveAnchorStock,
   simulateTimeline,
   formatTimelineSummary,
   formatDuration,
@@ -303,4 +304,19 @@ test('calculateStockAtTime projects accumulated stock and overflow at a target t
   assert.equal(stockCap.netGain, 1000);
   assert.equal(stockCap.overflowLoss, 344);
   assert.equal(stockCap.reachedCap, true);
+});
+
+test('resolveLiveAnchorStock accumulates elapsed hourly production automatically (100 -> 400 after 2h at 150/h)', () => {
+  const live = resolveLiveAnchorStock({
+    anchorStock: 100,
+    anchorTimeMs: BASE_TIME,
+    nowMs: BASE_TIME + 2 * 3600000,
+    baseHourlyRate: 150,
+    cap: 10000,
+  });
+
+  assert.equal(live.currentStock, 400);
+  assert.equal(live.accumulatedGain, 300);
+  assert.equal(live.overflowLoss, 0);
+  assert.equal(live.elapsedMs, 2 * 3600000);
 });

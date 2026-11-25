@@ -199,30 +199,32 @@ export function TimelinePlanner({
 
               return (
                 <div key={step.id} className={`step-card ${statusClass}`}>
-                  <div className="step-header">
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
-                      <span className="step-index num">{index + 1}</span>
-                      <strong style={{ fontSize: '15px' }}>{step.cost.presetLabel}</strong>
+                  <div className="step-header-stack">
+                    <div className="step-title-row">
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '7px' }}>
+                        <span className="step-index num">{index + 1}</span>
+                        <strong style={{ fontSize: '15.5px' }}>{step.cost.presetLabel}</strong>
 
-                      {step.cost.penaltyExemptReason === 'no_city' ? (
-                        <span className="badge badge-muted">성지 미보유 기본</span>
-                      ) : step.cost.penaltyExemptReason === 'pre_phase' ? (
-                        <span className="badge badge-muted">이릉 결전 전</span>
-                      ) : step.cost.isConnected ? (
-                        <span className="badge badge-muted">
-                          {index > 0 ? '관로 연결(자동)' : '관로 연결'}
-                        </span>
-                      ) : (
-                        <span className="badge badge-amber num">
-                          관로 미연결 {step.cost.distanceCount}칸 (+{step.cost.penaltyCost.toLocaleString()})
-                        </span>
-                      )}
+                        {step.cost.penaltyExemptReason === 'no_city' ? (
+                          <span className="badge badge-muted">성지 미보유 기본</span>
+                        ) : step.cost.penaltyExemptReason === 'pre_phase' ? (
+                          <span className="badge badge-muted">이릉 결전 전</span>
+                        ) : step.cost.isConnected ? (
+                          <span className="badge badge-muted">
+                            {index > 0 ? '관로 연결(자동)' : '관로 연결'}
+                          </span>
+                        ) : (
+                          <span className="badge badge-amber num">
+                            관로 미연결 {step.cost.distanceCount}칸 (+{step.cost.penaltyCost.toLocaleString()})
+                          </span>
+                        )}
 
-                      {step.cost.isEnemyZone && (
-                        <span className="badge badge-sky num">
-                          타 진영 +50% (+{step.cost.enemySurcharge.toLocaleString()})
-                        </span>
-                      )}
+                        {step.cost.isEnemyZone && (
+                          <span className="badge badge-sky num">
+                            타 진영 +50% (+{step.cost.enemySurcharge.toLocaleString()})
+                          </span>
+                        )}
+                      </div>
 
                       {step.cost.blockedByNoCityRule ? (
                         <span className="badge badge-crimson">
@@ -243,11 +245,11 @@ export function TimelinePlanner({
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px' }}>
+                    <div className="step-controls-row">
                       <input
                         type="datetime-local"
                         className="input num"
-                        style={{ width: 'auto', padding: '5px 8px', fontSize: '12.5px' }}
+                        style={{ width: 'auto', minHeight: '34px', padding: '5px 10px', fontSize: '13px' }}
                         value={toLocalDateTimeInput(step.scheduledMs)}
                         onChange={(e) => {
                           const ms = fromLocalDateTimeInput(e.target.value);
@@ -256,53 +258,55 @@ export function TimelinePlanner({
                           }
                         }}
                       />
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        title="위로"
-                        disabled={index === 0}
-                        onClick={() => onMoveEvent(step.id, -1)}
-                      >
-                        <ArrowUp size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        title="아래로"
-                        disabled={index === simulation.steps.length - 1}
-                        onClick={() => onMoveEvent(step.id, 1)}
-                      >
-                        <ArrowDown size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setEditingId(isEditing ? null : step.id)}
-                      >
-                        {isEditing ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                        수정
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-danger-ghost"
-                        title="일정 삭제"
-                        onClick={() => onRemoveEvent(step.id)}
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          title="위로"
+                          disabled={index === 0}
+                          onClick={() => onMoveEvent(step.id, -1)}
+                        >
+                          <ArrowUp size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          title="아래로"
+                          disabled={index === simulation.steps.length - 1}
+                          onClick={() => onMoveEvent(step.id, 1)}
+                        >
+                          <ArrowDown size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setEditingId(isEditing ? null : step.id)}
+                        >
+                          {isEditing ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          수정
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-danger-ghost"
+                          title="일정 삭제"
+                          onClick={() => onRemoveEvent(step.id)}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   <div className="step-metrics num">
                     <div className="step-metric">
                       <div className="kpi-label">도달 시 예상 보유</div>
-                      <div style={{ fontWeight: 800, fontSize: '15px' }}>
+                      <div style={{ fontWeight: 800, fontSize: '15.5px' }}>
                         {step.availableBeforeSpend.toLocaleString()}
                       </div>
                     </div>
                     <div className="step-metric">
                       <div className="kpi-label">총 소모 정철</div>
-                      <div style={{ fontWeight: 800, fontSize: '15px', color: '#f5c66b' }}>
+                      <div style={{ fontWeight: 800, fontSize: '15.5px', color: '#fbd37d' }}>
                         -{step.cost.totalCost.toLocaleString()}
                       </div>
                     </div>
@@ -311,7 +315,7 @@ export function TimelinePlanner({
                       <div
                         style={{
                           fontWeight: 800,
-                          fontSize: '15px',
+                          fontSize: '15.5px',
                           color: step.affordable ? 'var(--accent-emerald)' : 'var(--accent-crimson)',
                         }}
                       >
@@ -408,7 +412,7 @@ export function TimelinePlanner({
           >
             <div className="kpi-box">
               <div className="kpi-label">전체 일정 총 소모</div>
-              <div className="kpi-value" style={{ color: '#f5c66b' }}>
+              <div className="kpi-value" style={{ color: '#fbd37d' }}>
                 {simulation.summary.totalCost.toLocaleString()}
               </div>
             </div>

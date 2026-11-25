@@ -1,5 +1,19 @@
-import React, { useState } from 'react';
-import { CalendarClock, Check, Clock, Copy, Database, Gauge, RefreshCw, Target } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  CalendarClock,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Copy,
+  Database,
+  Gauge,
+  Pause,
+  Play,
+  RefreshCw,
+  ShieldAlert,
+  Target,
+} from 'lucide-react';
 import { formatDateTimeKST, formatDuration, SEASON_META } from '@jeongcheol/core';
 import {
   fromLocalDateTimeInput,
@@ -10,6 +24,11 @@ import {
 export function StatusPanel({
   allianceName,
   baseTimeMs,
+  anchorTimeMs,
+  anchorStock,
+  autoSyncEnabled,
+  onToggleAutoSync,
+  accumulatedGain,
   onBaseTimeChange,
   onResetBaseTimeNow,
   currentStock,
@@ -33,6 +52,17 @@ export function StatusPanel({
 }) {
   const [forecastMode, setForecastMode] = useState('amount-to-time');
   const [copiedForecast, setCopiedForecast] = useState(false);
+  const [rulesExpanded, setRulesExpanded] = useState(false);
+
+  // 보유 정철 입력 중 10초/5초 타이머나 빈 문자열 보정과 충돌하지 않도록 로컬 초안 문자열 관리
+  const [isEditingStock, setIsEditingStock] = useState(false);
+  const [stockDraft, setStockDraft] = useState(String(currentStock));
+
+  useEffect(() => {
+    if (!isEditingStock) {
+      setStockDraft(String(currentStock));
+    }
+  }, [currentStock, isEditingStock]);
 
   const fillPercent = Math.min(100, Math.max(0, (currentStock / Math.max(1, cap)) * 100));
   const boostDiff = effectiveStartRate - baseHourlyRate;
@@ -99,27 +129,43 @@ export function StatusPanel({
         <div>
           <h2 className="card-title">
             <Database size={18} color="#e5a93c" />
-            동맹 정철 현재 상태 · 시즌 규칙
+            동맹 정철 현재 상태
+            {autoSyncEnabled ? (
+              <span className="badge badge-emerald">
+                <span className="live-dot" /> 실시간 자동 동기화 중
+              </span>
+            ) : (
+              <span className="badge badge-muted">수동 시각 고정됨</span>
+            )}
           </h2>
           <p className="card-subtitle">
-            인게임 동맹 정철 수치와 패업 [{SEASON_META.connectionRulePhaseName}] 적용 여부를 설정해 주세요.
+            {autoSyncEnabled
+              ? `기준점(${formatDateTimeKST(anchorTimeMs)} · ${Math.floor(
+                  anchorStock
+                ).toLocaleString()}) 이후 흐른 시간만큼 생산량이 자동 누적됩니다.`
+              : '수동 고정 모드입니다. 실시간 자동 동기화를 켜면 시간 경과에 따라 보유 정철이 자동 갱신됩니다.'}
           </p>
         </div>
-        <button type="button" className="btn btn-sm" onClick={onResetBaseTimeNow}>
-          <RefreshCw size={14} />
-          기준 시각 현재로 맞추기
-        </button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => onToggleAutoSync(!autoSyncEnabled)}
+          >
+            {autoSyncEnabled ? <Pause size={14} /> : <Play size={14} color="#34d399" />}
+            {autoSyncEnabled ? '자동 동기화 일시정지' : '실시간 동기화 켜기'}
+          </button>
+          <button type="button" className="btn btn-sm" onClick={onResetBaseTimeNow}>
+            <RefreshCw size={14} />
+            현재 시각으로 맞추기
+          </button>
+        </div>
       </div>
 
       <div className="status-grid">
         <div className="field">
           <label htmlFor="base-time-input">
-            <span>
-              기준 시각{' '}
-              <span className="muted-note" style={{ fontWeight: 500 }}>
-                (새로고침 시 현재 시각)
-              </span>
-            </span>
+            <span>기준 시각</span>
             <Clock size={13} />
           </label>
           <input
@@ -145,9 +191,28 @@ export function StatusPanel({
             min="0"
             max={cap}
             className="input num"
-            value={currentStock}
-            onChange={(e) => onCurrentStockChange(Math.max(0, Number(e.target.value) || 0))}
+            value={stockDraft}
+            onFocus={() => setIsEditingStock(true)}
+            onBlur={() => {
+              setIsEditingStock(false);
+              const parsed = Math.max(0, Math.min(cap, Number(stockDraft) || 0));
+              setStockDraft(String(parsed));
+              onCurrentStockChange(parsed);
+            }}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setStockDraft(raw);
+              if (raw !== '') {
+                const parsed = Math.max(0, Math.min(cap, Number(raw) || 0));
+                onCurrentStockChange(parsed);
+              }
+            }}
           />
+          {autoSyncEnabled && accumulatedGain > 0 && (
+            <span className="muted-note num" style={{ color: '#6ee7b7' }}>
+              +{accumulatedGain.toLocaleString()} 자동 누적 반영됨
+            </span>
+          )}
         </div>
 
         <div className="field">
@@ -201,46 +266,75 @@ export function StatusPanel({
         </div>
       </div>
 
-      <div className="form-grid-2" style={{ marginTop: '14px' }}>
-        <div className="field">
-          <label>패업 [{SEASON_META.connectionRulePhaseName}] 성지 연결 규칙</label>
-          <div className="toggle-group">
-            <button
-              type="button"
-              className={`toggle-option ${connectionRuleActive ? 'active' : ''}`}
-              onClick={() => onConnectionRuleActiveChange(true)}
-            >
-              적용 중 (관로 미연결 시 추가 소모)
-            </button>
-            <button
-              type="button"
-              className={`toggle-option ${!connectionRuleActive ? 'active' : ''}`}
-              onClick={() => onConnectionRuleActiveChange(false)}
-            >
-              적용 전 (거리 페널티 없음)
-            </button>
+      {/* 접이식 시즌 연결 규칙 바 */}
+      <div className="collapsible-bar">
+        <button
+          type="button"
+          className="collapsible-trigger"
+          aria-expanded={rulesExpanded}
+          onClick={() => setRulesExpanded((prev) => !prev)}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+            <ShieldAlert size={15} color="#e5a93c" />
+            <strong style={{ fontSize: '13.5px' }}>시즌 성지 연결 규칙 설정</strong>
+            <span className={`badge ${connectionRuleActive ? 'badge-gold' : 'badge-muted'}`}>
+              [{SEASON_META.connectionRulePhaseName}] {connectionRuleActive ? '적용 중' : '적용 전'}
+            </span>
+            <span className={`badge ${allianceHasNoCities ? 'badge-amber' : 'badge-muted'}`}>
+              {allianceHasNoCities ? '보유 성지 0개 (9렙↓ 기본만)' : '보유 성지 1개+'}
+            </span>
           </div>
-        </div>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+            {rulesExpanded ? '접기' : '변경'}
+            {rulesExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          </span>
+        </button>
 
-        <div className="field">
-          <label>동맹 성지 보유 상태 (규칙 3)</label>
-          <div className="toggle-group">
-            <button
-              type="button"
-              className={`toggle-option ${!allianceHasNoCities ? 'active' : ''}`}
-              onClick={() => onAllianceHasNoCitiesChange(false)}
-            >
-              보유 성지 1개 이상
-            </button>
-            <button
-              type="button"
-              className={`toggle-option ${allianceHasNoCities ? 'active-danger' : ''}`}
-              onClick={() => onAllianceHasNoCitiesChange(true)}
-            >
-              성지 0개 (9렙↓ 기본 소모만)
-            </button>
+        {rulesExpanded && (
+          <div className="collapsible-body">
+            <div className="form-grid-2" style={{ marginTop: '12px' }}>
+              <div className="field">
+                <label>패업 [{SEASON_META.connectionRulePhaseName}] 성지 연결 규칙</label>
+                <div className="toggle-group">
+                  <button
+                    type="button"
+                    className={`toggle-option ${connectionRuleActive ? 'active' : ''}`}
+                    onClick={() => onConnectionRuleActiveChange(true)}
+                  >
+                    적용 중 (관로 미연결 시 추가 소모)
+                  </button>
+                  <button
+                    type="button"
+                    className={`toggle-option ${!connectionRuleActive ? 'active' : ''}`}
+                    onClick={() => onConnectionRuleActiveChange(false)}
+                  >
+                    적용 전 (거리 페널티 없음)
+                  </button>
+                </div>
+              </div>
+
+              <div className="field">
+                <label>동맹 성지 보유 상태 (규칙 3)</label>
+                <div className="toggle-group">
+                  <button
+                    type="button"
+                    className={`toggle-option ${!allianceHasNoCities ? 'active' : ''}`}
+                    onClick={() => onAllianceHasNoCitiesChange(false)}
+                  >
+                    보유 성지 1개 이상
+                  </button>
+                  <button
+                    type="button"
+                    className={`toggle-option ${allianceHasNoCities ? 'active-danger' : ''}`}
+                    onClick={() => onAllianceHasNoCitiesChange(true)}
+                  >
+                    성지 0개 (9렙↓ 기본 소모만)
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="stock-meter">
@@ -253,7 +347,7 @@ export function StatusPanel({
             실효 생산: <strong>+{effectiveStartRate.toLocaleString()}/시간</strong>
           </span>
           <span className="num" style={{ color: 'var(--text-secondary)' }}>
-            상한 가득 차는 시각:{' '}
+            상한 100% 도달:{' '}
             <strong style={{ color: 'var(--text-primary)' }}>
               {timeToCap?.status === 'ready'
                 ? '이미 상한 도달'
@@ -323,7 +417,7 @@ export function StatusPanel({
             <div className="kpi-grid num">
               <div className="kpi-box">
                 <div className="kpi-label">추가 필요 정철</div>
-                <div className="kpi-value" style={{ color: '#f5c66b' }}>
+                <div className="kpi-value" style={{ color: '#fbd37d' }}>
                   {targetReach.neededAmount > 0
                     ? `+${targetReach.neededAmount.toLocaleString()}`
                     : '0 (달성)'}
@@ -335,7 +429,7 @@ export function StatusPanel({
                 <div
                   className="kpi-value"
                   style={{
-                    fontSize: '16px',
+                    fontSize: '17px',
                     color:
                       targetReach.status === 'ready'
                         ? 'var(--accent-emerald)'
@@ -356,7 +450,7 @@ export function StatusPanel({
 
               <div className="kpi-box">
                 <div className="kpi-label">도달 예상 시각</div>
-                <div className="kpi-value" style={{ fontSize: '15px' }}>
+                <div className="kpi-value" style={{ fontSize: '15.5px' }}>
                   {targetReach.status === 'ready'
                     ? '지금 바로 가능'
                     : targetReach.timeMs
@@ -398,7 +492,7 @@ export function StatusPanel({
               <div className="kpi-grid num">
                 <div className="kpi-box">
                   <div className="kpi-label">예상 보유 정철</div>
-                  <div className="kpi-value" style={{ color: '#f5c66b' }}>
+                  <div className="kpi-value" style={{ color: '#fbd37d' }}>
                     {stockAtTime.projectedStock.toLocaleString()}
                     <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
                       {' '}
@@ -416,7 +510,7 @@ export function StatusPanel({
 
                 <div className="kpi-box">
                   <div className="kpi-label">경과 시간 / 최종 속도</div>
-                  <div className="kpi-value" style={{ fontSize: '14px' }}>
+                  <div className="kpi-value" style={{ fontSize: '14.5px' }}>
                     {stockAtTime.elapsedMs > 0 ? formatDuration(stockAtTime.elapsedMs) : '기준 시각'}
                     <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>
                       +{stockAtTime.finalRate.toLocaleString()}/시간
