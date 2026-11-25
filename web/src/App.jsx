@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Calculator, CalendarRange, RotateCcw, Shield } from 'lucide-react';
 import {
   buildRateSchedule,
+  calculateStockAtTime,
+  calculateTargetReach,
   computeAutoEtaSchedule,
   findEarliestAffordableTime,
   LEVEL_BRACKET_PENALTIES,
@@ -37,6 +39,8 @@ function createInitialState(nowMs = Date.now()) {
     currentStock: 1800,
     baseHourlyRate: SEASON_META.defaultHourlyRate,
     cap: SEASON_META.defaultCap,
+    targetGoalAmount: 6000,
+    targetCheckTimeMs: roundedNow + 24 * 3600000,
     boosts: [],
     rules: createDefaultRules(),
     singleTarget: {
@@ -80,18 +84,33 @@ function createInitialState(nowMs = Date.now()) {
 }
 
 function loadSavedState() {
+  const fresh = createInitialState();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return createInitialState();
+    if (!raw) return fresh;
     const parsed = JSON.parse(raw);
-    const fresh = createInitialState();
+    const nowMs = fresh.baseTimeMs;
+
+    const singleTargetTimeMs =
+      Number.isFinite(parsed.singleTargetTimeMs) && parsed.singleTargetTimeMs >= nowMs
+        ? parsed.singleTargetTimeMs
+        : fresh.singleTargetTimeMs;
+    const targetCheckTimeMs =
+      Number.isFinite(parsed.targetCheckTimeMs) && parsed.targetCheckTimeMs >= nowMs
+        ? parsed.targetCheckTimeMs
+        : fresh.targetCheckTimeMs;
+
     return {
       ...fresh,
       ...parsed,
+      // 새로고침·재방문 시 기준 시각은 항상 현재 시각으로 자동 설정
+      baseTimeMs: nowMs,
+      singleTargetTimeMs,
+      targetCheckTimeMs,
       rules: parsed.rules?.presets ? { ...fresh.rules, ...parsed.rules } : fresh.rules,
     };
   } catch {
-    return createInitialState();
+    return fresh;
   }
 }
 
@@ -129,6 +148,46 @@ export function App() {
         scheduledChanges: rateSchedule.scheduledChanges,
       }),
     [state.baseTimeMs, state.currentStock, effectiveStartRate, state.cap, rateSchedule]
+  );
+
+  const targetReach = useMemo(
+    () =>
+      calculateTargetReach({
+        currentStock: state.currentStock,
+        baseHourlyRate: state.baseHourlyRate,
+        cap: state.cap,
+        baseTime: state.baseTimeMs,
+        targetAmount: state.targetGoalAmount ?? 6000,
+        boosts: state.boosts,
+      }),
+    [
+      state.currentStock,
+      state.baseHourlyRate,
+      state.cap,
+      state.baseTimeMs,
+      state.targetGoalAmount,
+      state.boosts,
+    ]
+  );
+
+  const stockAtTime = useMemo(
+    () =>
+      calculateStockAtTime({
+        currentStock: state.currentStock,
+        baseHourlyRate: state.baseHourlyRate,
+        cap: state.cap,
+        baseTime: state.baseTimeMs,
+        targetTime: state.targetCheckTimeMs ?? state.baseTimeMs + 24 * 3600000,
+        boosts: state.boosts,
+      }),
+    [
+      state.currentStock,
+      state.baseHourlyRate,
+      state.cap,
+      state.baseTimeMs,
+      state.targetCheckTimeMs,
+      state.boosts,
+    ]
   );
 
   const simulation = useMemo(
@@ -317,6 +376,7 @@ export function App() {
 
       <div className="stack">
         <StatusPanel
+          allianceName={state.allianceName}
           baseTimeMs={state.baseTimeMs}
           onBaseTimeChange={(baseTimeMs) => updateState({ baseTimeMs })}
           onResetBaseTimeNow={() =>
@@ -338,6 +398,12 @@ export function App() {
             updateRulesPatch({ allianceHasNoCities })
           }
           timeToCap={timeToCap}
+          targetGoalAmount={state.targetGoalAmount ?? 6000}
+          onTargetGoalAmountChange={(targetGoalAmount) => updateState({ targetGoalAmount })}
+          targetReach={targetReach}
+          targetCheckTimeMs={state.targetCheckTimeMs ?? state.baseTimeMs + 24 * 3600000}
+          onTargetCheckTimeChange={(targetCheckTimeMs) => updateState({ targetCheckTimeMs })}
+          stockAtTime={stockAtTime}
         />
 
         <IronworksPlanner

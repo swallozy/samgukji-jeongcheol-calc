@@ -1,9 +1,14 @@
-import React from 'react';
-import { Clock, Database, Gauge, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { CalendarClock, Check, Clock, Copy, Database, Gauge, RefreshCw, Target } from 'lucide-react';
 import { formatDateTimeKST, formatDuration, SEASON_META } from '@jeongcheol/core';
-import { fromLocalDateTimeInput, toLocalDateTimeInput } from '../utils/time.js';
+import {
+  fromLocalDateTimeInput,
+  getNextClockHourMs,
+  toLocalDateTimeInput,
+} from '../utils/time.js';
 
 export function StatusPanel({
+  allianceName,
   baseTimeMs,
   onBaseTimeChange,
   onResetBaseTimeNow,
@@ -19,9 +24,74 @@ export function StatusPanel({
   allianceHasNoCities,
   onAllianceHasNoCitiesChange,
   timeToCap,
+  targetGoalAmount,
+  onTargetGoalAmountChange,
+  targetReach,
+  targetCheckTimeMs,
+  onTargetCheckTimeChange,
+  stockAtTime,
 }) {
+  const [forecastMode, setForecastMode] = useState('amount-to-time');
+  const [copiedForecast, setCopiedForecast] = useState(false);
+
   const fillPercent = Math.min(100, Math.max(0, (currentStock / Math.max(1, cap)) * 100));
   const boostDiff = effectiveStartRate - baseHourlyRate;
+
+  const quickGoalAmounts = Array.from(new Set([1500, 3000, 4500, 6000, 8000, cap])).sort(
+    (a, b) => a - b
+  );
+
+  const quickCheckTimes = [
+    { label: '+6시간', ms: baseTimeMs + 6 * 3600000 },
+    { label: '+12시간', ms: baseTimeMs + 12 * 3600000 },
+    { label: '+24시간', ms: baseTimeMs + 24 * 3600000 },
+    { label: '오늘/다음 21:00', ms: getNextClockHourMs(baseTimeMs, 21, false) },
+    { label: '내일 21:00', ms: getNextClockHourMs(baseTimeMs, 21, true) },
+  ];
+
+  const reachSummaryText = (() => {
+    const prefix = `[${SEASON_META.name}] ${allianceName || '동맹'} 정철 도달 예상 (${currentStock.toLocaleString()} → ${targetReach.targetAmount.toLocaleString()})`;
+    if (targetReach.status === 'ready') {
+      return `${prefix}: ✅ 이미 목표 수량을 보유 중입니다.`;
+    }
+    if (targetReach.status === 'exceeds_cap') {
+      return `${prefix}: ❌ 목표 수량이 보유 상한(${cap.toLocaleString()})을 초과했습니다.`;
+    }
+    if (targetReach.status === 'no_production') {
+      return `${prefix}: ⚠️ 시간당 생산량이 0이어서 도달할 수 없습니다.`;
+    }
+    return `${prefix}\n• 필요량: +${targetReach.neededAmount.toLocaleString()} (생산 +${effectiveStartRate}/시간)\n• 남은 시간: ${formatDuration(
+      targetReach.waitMs
+    )} (${formatDateTimeKST(targetReach.timeMs)} 도달 예상)`;
+  })();
+
+  const timeSummaryText = [
+    `[${SEASON_META.name}] ${allianceName || '동맹'} 특정 시각 예상 정철`,
+    `• 기준(${formatDateTimeKST(baseTimeMs)}): 현재 ${currentStock.toLocaleString()} / 상한 ${cap.toLocaleString()} · 생산 +${effectiveStartRate}/시간`,
+    `• 조회 시각: ${formatDateTimeKST(stockAtTime.targetTimeMs)} (${
+      stockAtTime.elapsedMs > 0 ? `${formatDuration(stockAtTime.elapsedMs)} 후` : '기준 시각'
+    })`,
+    `• 예상 보유 정철: ${stockAtTime.projectedStock.toLocaleString()} / ${cap.toLocaleString()} (+${stockAtTime.netGain.toLocaleString()} 증가)` +
+      (stockAtTime.overflowLoss > 0
+        ? ` ⚠️ 상한 초과 손실 -${stockAtTime.overflowLoss.toLocaleString()}`
+        : ''),
+  ].join('\n');
+
+  const handleCopyForecast = async () => {
+    const text = forecastMode === 'amount-to-time' ? reachSummaryText : timeSummaryText;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    setCopiedForecast(true);
+    setTimeout(() => setCopiedForecast(false), 1800);
+  };
 
   return (
     <section className="card">
@@ -44,7 +114,12 @@ export function StatusPanel({
       <div className="status-grid">
         <div className="field">
           <label htmlFor="base-time-input">
-            <span>기준 시각</span>
+            <span>
+              기준 시각{' '}
+              <span className="muted-note" style={{ fontWeight: 500 }}>
+                (새로고침 시 현재 시각)
+              </span>
+            </span>
             <Clock size={13} />
           </label>
           <input
@@ -188,6 +263,185 @@ export function StatusPanel({
             </strong>
           </span>
         </div>
+      </div>
+
+      <div className="target-reach-box">
+        <div className="target-reach-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div className="tabs">
+              <button
+                type="button"
+                className={`tab-btn ${forecastMode === 'amount-to-time' ? 'active' : ''}`}
+                style={{ padding: '6px 11px', fontSize: '12.5px' }}
+                onClick={() => setForecastMode('amount-to-time')}
+              >
+                <Target size={14} /> 목표 수량 → 시간
+              </button>
+              <button
+                type="button"
+                className={`tab-btn ${forecastMode === 'time-to-amount' ? 'active' : ''}`}
+                style={{ padding: '6px 11px', fontSize: '12.5px' }}
+                onClick={() => setForecastMode('time-to-amount')}
+              >
+                <CalendarClock size={14} /> 특정 시각 → 예상 정철
+              </button>
+            </div>
+            <span className="muted-note">제철소 추가 계획 · 상한 자동 반영</span>
+          </div>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={handleCopyForecast}>
+            {copiedForecast ? <Check size={13} /> : <Copy size={13} />}
+            {copiedForecast ? '복사됨!' : '결과 복사'}
+          </button>
+        </div>
+
+        {forecastMode === 'amount-to-time' ? (
+          <div className="target-reach-grid">
+            <div className="field">
+              <label htmlFor="target-goal-amount-input">목표 정철 수량</label>
+              <input
+                id="target-goal-amount-input"
+                type="number"
+                min="0"
+                className="input num"
+                value={targetGoalAmount}
+                onChange={(e) => onTargetGoalAmountChange(Math.max(0, Number(e.target.value) || 0))}
+              />
+              <div className="chip-row">
+                {quickGoalAmounts.map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    className={`chip ${targetGoalAmount === amt ? 'active' : ''}`}
+                    onClick={() => onTargetGoalAmountChange(amt)}
+                  >
+                    {amt === cap ? `상한(${amt.toLocaleString()})` : amt.toLocaleString()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="kpi-grid num">
+              <div className="kpi-box">
+                <div className="kpi-label">추가 필요 정철</div>
+                <div className="kpi-value" style={{ color: '#f5c66b' }}>
+                  {targetReach.neededAmount > 0
+                    ? `+${targetReach.neededAmount.toLocaleString()}`
+                    : '0 (달성)'}
+                </div>
+              </div>
+
+              <div className="kpi-box">
+                <div className="kpi-label">남은 시간</div>
+                <div
+                  className="kpi-value"
+                  style={{
+                    fontSize: '16px',
+                    color:
+                      targetReach.status === 'ready'
+                        ? 'var(--accent-emerald)'
+                        : targetReach.status === 'exceeds_cap'
+                        ? 'var(--accent-crimson)'
+                        : 'var(--text-primary)',
+                  }}
+                >
+                  {targetReach.status === 'ready'
+                    ? '이미 달성됨'
+                    : targetReach.status === 'exceeds_cap'
+                    ? '보유 상한 초과'
+                    : targetReach.status === 'no_production'
+                    ? '도달 불가 (생산 0)'
+                    : formatDuration(targetReach.waitMs)}
+                </div>
+              </div>
+
+              <div className="kpi-box">
+                <div className="kpi-label">도달 예상 시각</div>
+                <div className="kpi-value" style={{ fontSize: '15px' }}>
+                  {targetReach.status === 'ready'
+                    ? '지금 바로 가능'
+                    : targetReach.timeMs
+                    ? formatDateTimeKST(targetReach.timeMs)
+                    : '-'}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div className="target-reach-grid">
+              <div className="field">
+                <label htmlFor="target-check-time-input">확인할 날짜 · 시각</label>
+                <input
+                  id="target-check-time-input"
+                  type="datetime-local"
+                  className="input num"
+                  value={toLocalDateTimeInput(targetCheckTimeMs)}
+                  onChange={(e) => {
+                    const ms = fromLocalDateTimeInput(e.target.value);
+                    if (Number.isFinite(ms)) onTargetCheckTimeChange(ms);
+                  }}
+                />
+                <div className="chip-row">
+                  {quickCheckTimes.map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      className="chip"
+                      onClick={() => onTargetCheckTimeChange(preset.ms)}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="kpi-grid num">
+                <div className="kpi-box">
+                  <div className="kpi-label">예상 보유 정철</div>
+                  <div className="kpi-value" style={{ color: '#f5c66b' }}>
+                    {stockAtTime.projectedStock.toLocaleString()}
+                    <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                      {' '}
+                      / {cap.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="kpi-box">
+                  <div className="kpi-label">순수 증가량</div>
+                  <div className="kpi-value" style={{ color: 'var(--accent-emerald)' }}>
+                    +{stockAtTime.netGain.toLocaleString()}
+                  </div>
+                </div>
+
+                <div className="kpi-box">
+                  <div className="kpi-label">경과 시간 / 최종 속도</div>
+                  <div className="kpi-value" style={{ fontSize: '14px' }}>
+                    {stockAtTime.elapsedMs > 0 ? formatDuration(stockAtTime.elapsedMs) : '기준 시각'}
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                      +{stockAtTime.finalRate.toLocaleString()}/시간
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {stockAtTime.overflowLoss > 0 && (
+              <div className="alert-line warn num">
+                <span>
+                  ⚠️ 이 시각 전에 보유 상한({cap.toLocaleString()})에 도달해{' '}
+                  <strong>{stockAtTime.overflowLoss.toLocaleString()} 정철</strong>이 초과 손실됩니다.
+                </span>
+              </div>
+            )}
+
+            {stockAtTime.isInvalidTargetTime && (
+              <div className="alert-line danger">
+                <span>선택한 시각이 기준 시각보다 이전이어서 기준 시각 보유량으로 표시되었습니다.</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );

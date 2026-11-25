@@ -306,17 +306,15 @@ export function findEarliestAffordableTime({
 }
 
 /**
- * 단건 공성 계산기
+ * 특정 시각(targetTime)에 보유하게 될 예상 정철 수량, 순증가량, 상한 손실량을 계산합니다.
  */
-export function calculateSingleSiege({
+export function calculateStockAtTime({
   currentStock = 0,
   baseHourlyRate = SEASON_META.defaultHourlyRate,
   cap = SEASON_META.defaultCap,
   baseTime = Date.now(),
   targetTime,
-  target = {},
   boosts = [],
-  rules = {},
 } = {}) {
   const baseMs = toEpochMs(baseTime);
   const targetMs = targetTime ? toEpochMs(targetTime) : baseMs;
@@ -327,7 +325,6 @@ export function calculateSingleSiege({
   const { immediateBoost, scheduledChanges } = buildRateSchedule(boosts, baseMs);
   const effectiveStartRate = Math.max(0, safeBaseRate + immediateBoost);
 
-  const cost = calculateSiegeCost(target, rules);
   const isInvalidTargetTime = !Number.isFinite(targetMs) || targetMs < baseMs;
   const evalEndMs = isInvalidTargetTime ? baseMs : targetMs;
 
@@ -342,34 +339,117 @@ export function calculateSingleSiege({
 
   const projectedStock = Math.floor(exactProjected);
   const overflowLoss = Math.floor(overflow);
-  const remainingAfterSiege = projectedStock - cost.totalCost;
-  const deficit = Math.max(0, cost.totalCost - projectedStock);
-
-  const earliest = findEarliestAffordableTime({
-    startMs: baseMs,
-    initialStock: safeStock,
-    initialRate: effectiveStartRate,
-    cap: safeCap,
-    requiredCost: cost.totalCost,
-    scheduledChanges,
-  });
 
   return {
     baseTimeMs: baseMs,
     targetTimeMs: evalEndMs,
+    elapsedMs: Math.max(0, evalEndMs - baseMs),
     isInvalidTargetTime,
     currentStock: safeStock,
     cap: safeCap,
     effectiveStartRate,
     finalRate,
-    cost,
     projectedStock,
     exactProjected,
+    netGain: projectedStock - safeStock,
     overflowLoss,
+    reachedCap: projectedStock >= safeCap,
+    scheduledChanges,
+  };
+}
+
+/**
+ * 단건 공성 계산기
+ */
+export function calculateSingleSiege({
+  currentStock = 0,
+  baseHourlyRate = SEASON_META.defaultHourlyRate,
+  cap = SEASON_META.defaultCap,
+  baseTime = Date.now(),
+  targetTime,
+  target = {},
+  boosts = [],
+  rules = {},
+} = {}) {
+  const projection = calculateStockAtTime({
+    currentStock,
+    baseHourlyRate,
+    cap,
+    baseTime,
+    targetTime,
+    boosts,
+  });
+
+  const cost = calculateSiegeCost(target, rules);
+  const remainingAfterSiege = projection.projectedStock - cost.totalCost;
+  const deficit = Math.max(0, cost.totalCost - projection.projectedStock);
+
+  const earliest = findEarliestAffordableTime({
+    startMs: projection.baseTimeMs,
+    initialStock: projection.currentStock,
+    initialRate: projection.effectiveStartRate,
+    cap: projection.cap,
+    requiredCost: cost.totalCost,
+    scheduledChanges: projection.scheduledChanges,
+  });
+
+  return {
+    baseTimeMs: projection.baseTimeMs,
+    targetTimeMs: projection.targetTimeMs,
+    isInvalidTargetTime: projection.isInvalidTargetTime,
+    currentStock: projection.currentStock,
+    cap: projection.cap,
+    effectiveStartRate: projection.effectiveStartRate,
+    finalRate: projection.finalRate,
+    cost,
+    projectedStock: projection.projectedStock,
+    exactProjected: projection.exactProjected,
+    overflowLoss: projection.overflowLoss,
     canAffordAtTarget: remainingAfterSiege >= 0,
     remainingAfterSiege,
     deficit,
     earliest,
+  };
+}
+
+/**
+ * 목표 정철 수량(targetAmount)까지 모으는 데 걸리는 시간과 달성 예상 시각을 계산합니다.
+ */
+export function calculateTargetReach({
+  currentStock = 0,
+  baseHourlyRate = SEASON_META.defaultHourlyRate,
+  cap = SEASON_META.defaultCap,
+  baseTime = Date.now(),
+  targetAmount = 6000,
+  boosts = [],
+} = {}) {
+  const baseMs = toEpochMs(baseTime);
+  const safeCap = Math.max(1, clampNonNegative(cap, SEASON_META.defaultCap));
+  const safeStock = Math.min(safeCap, clampNonNegative(currentStock, 0));
+  const safeBaseRate = clampNonNegative(baseHourlyRate, 0);
+  const safeTarget = clampNonNegative(targetAmount, 0);
+
+  const { immediateBoost, scheduledChanges } = buildRateSchedule(boosts, baseMs);
+  const effectiveStartRate = Math.max(0, safeBaseRate + immediateBoost);
+  const neededAmount = Math.max(0, safeTarget - safeStock);
+
+  const reach = findEarliestAffordableTime({
+    startMs: baseMs,
+    initialStock: safeStock,
+    initialRate: effectiveStartRate,
+    cap: safeCap,
+    requiredCost: safeTarget,
+    scheduledChanges,
+  });
+
+  return {
+    baseTimeMs: baseMs,
+    currentStock: safeStock,
+    cap: safeCap,
+    targetAmount: safeTarget,
+    neededAmount,
+    effectiveStartRate,
+    ...reach,
   };
 }
 

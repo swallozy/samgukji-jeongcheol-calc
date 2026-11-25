@@ -6,6 +6,8 @@ import {
   SIEGE_TARGET_PRESETS,
   calculateSiegeCost,
   calculateSingleSiege,
+  calculateStockAtTime,
+  calculateTargetReach,
   computeAutoEtaSchedule,
   simulateTimeline,
   formatTimelineSummary,
@@ -237,4 +239,68 @@ test('simulateTimeline handles no-city transition from step 1 to step 2 and cap 
   const summary = formatTimelineSummary(sim, { allianceName: '테스트맹' });
   assert.match(summary, /테스트맹 정철 공성 계획/);
   assert.match(summary, /성지 미보유 기본 소모/);
+});
+
+test('calculateTargetReach computes exact days/hours/minutes for target amount', () => {
+  // 1500 -> 6000 at 112/h = 4500 / 112 = 40.17857h -> 1일 16시간 11분
+  const reach = calculateTargetReach({
+    currentStock: 1500,
+    baseHourlyRate: 112,
+    cap: 10000,
+    baseTime: BASE_TIME,
+    targetAmount: 6000,
+  });
+
+  assert.equal(reach.status, 'wait');
+  assert.equal(reach.neededAmount, 4500);
+  assert.equal(formatDuration(reach.waitMs), '1일 16시간 11분');
+
+  // Already reached
+  const ready = calculateTargetReach({
+    currentStock: 6500,
+    baseHourlyRate: 112,
+    cap: 10000,
+    baseTime: BASE_TIME,
+    targetAmount: 6000,
+  });
+  assert.equal(ready.status, 'ready');
+  assert.equal(ready.neededAmount, 0);
+
+  // Exceeds cap
+  const overCap = calculateTargetReach({
+    currentStock: 1500,
+    baseHourlyRate: 112,
+    cap: 10000,
+    baseTime: BASE_TIME,
+    targetAmount: 12000,
+  });
+  assert.equal(overCap.status, 'exceeds_cap');
+});
+
+test('calculateStockAtTime projects accumulated stock and overflow at a target timestamp', () => {
+  // 1500 + 24h * 112 = 1500 + 2688 = 4188
+  const stock24h = calculateStockAtTime({
+    currentStock: 1500,
+    baseHourlyRate: 112,
+    cap: 10000,
+    baseTime: BASE_TIME,
+    targetTime: BASE_TIME + 24 * 3600000,
+  });
+  assert.equal(stock24h.projectedStock, 4188);
+  assert.equal(stock24h.netGain, 2688);
+  assert.equal(stock24h.overflowLoss, 0);
+  assert.equal(stock24h.reachedCap, false);
+
+  // Near cap: 9000 + 12h * 112 = 10344 -> capped 10000, overflow 344
+  const stockCap = calculateStockAtTime({
+    currentStock: 9000,
+    baseHourlyRate: 112,
+    cap: 10000,
+    baseTime: BASE_TIME,
+    targetTime: BASE_TIME + 12 * 3600000,
+  });
+  assert.equal(stockCap.projectedStock, 10000);
+  assert.equal(stockCap.netGain, 1000);
+  assert.equal(stockCap.overflowLoss, 344);
+  assert.equal(stockCap.reachedCap, true);
 });

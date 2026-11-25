@@ -431,13 +431,20 @@ export function TimelinePlanner({
               </div>
             </div>
             <div className="kpi-box">
-              <div className="kpi-label">일정 종료 후 상한 회복</div>
-              <div className="kpi-value" style={{ fontSize: '14px' }}>
-                {simulation.summary.timeToFull?.status === 'ready'
-                  ? '이미 상한'
-                  : simulation.summary.timeToFull?.timeMs
-                  ? formatDateTimeKST(simulation.summary.timeToFull.timeMs)
-                  : '-'}
+              <div className="kpi-label">마지막 일정 후 상한(100%) 재충전</div>
+              <div className="kpi-value" style={{ fontSize: '14px', lineHeight: 1.35 }}>
+                {simulation.summary.timeToFull?.status === 'ready' ? (
+                  '이미 상한 도달'
+                ) : simulation.summary.timeToFull?.timeMs ? (
+                  <>
+                    <div>{formatDateTimeKST(simulation.summary.timeToFull.timeMs)}</div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      완료 시점 기준 +{formatDuration(simulation.summary.timeToFull.waitMs)}
+                    </div>
+                  </>
+                ) : (
+                  '-'
+                )}
               </div>
             </div>
           </div>
