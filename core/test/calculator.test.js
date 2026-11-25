@@ -410,3 +410,99 @@ test('resolveLiveAnchorStock mirrors 5-minute in-game ticks (820 -> 860 over 15m
   assert.equal(at5420.completedTicks, 1);
   assert.equal(at5420.currentStock, 913);
 });
+
+test('discrete 5-minute tick forecast aligns stockAtTime, targetReach, singleSiege, and timeline to server ticks', () => {
+  const offsetMs = SEASON_META.tickGridOffsetMs; // 4m 20s
+  // 12:11:30 시점, 직전 정산 슬롯 12:09:20 기준 보유 953 (160/시간)
+  const baseTime = BASE_TIME + 11 * 60000; // 12:11:00
+  const tickBaseTime = BASE_TIME + (9 * 60 + 20) * 1000; // 12:09:20
+
+  // 12:13:00 (다음 정산 12:14:20 전) -> 아직 증가 0 (953 유지)
+  const beforeNextTick = calculateStockAtTime({
+    currentStock: 953,
+    baseHourlyRate: 160,
+    cap: 10000,
+    baseTime,
+    tickBaseTime,
+    targetTime: BASE_TIME + 13 * 60000,
+    tickIntervalMinutes: 5,
+    gridOffsetMs: offsetMs,
+  });
+  assert.equal(beforeNextTick.projectedStock, 953);
+  assert.equal(beforeNextTick.netGain, 0);
+
+  // 12:15:00 (12:14:20 정산 후) -> +13 반영되어 966
+  const afterNextTick = calculateStockAtTime({
+    currentStock: 953,
+    baseHourlyRate: 160,
+    cap: 10000,
+    baseTime,
+    tickBaseTime,
+    targetTime: BASE_TIME + 15 * 60000,
+    tickIntervalMinutes: 5,
+    gridOffsetMs: offsetMs,
+  });
+  assert.equal(afterNextTick.projectedStock, 966);
+  assert.equal(afterNextTick.netGain, 13);
+
+  // 목표 수량 966 달성 시각: 12:14:20 틱 -> 분 올림 12:15:00
+  const reach966 = calculateTargetReach({
+    currentStock: 953,
+    baseHourlyRate: 160,
+    cap: 10000,
+    baseTime,
+    tickBaseTime,
+    targetAmount: 966,
+    tickIntervalMinutes: 5,
+    gridOffsetMs: offsetMs,
+  });
+  assert.equal(reach966.status, 'wait');
+  assert.equal(reach966.exactTickMs, BASE_TIME + (14 * 60 + 20) * 1000);
+  assert.equal(reach966.timeMs, BASE_TIME + 15 * 60000);
+
+  // 제철소 +40/시간이 12:16:00에 반영될 때, 12:20:00 (12:19:20 틱)에 200/h 기준 16 증가 (966 + 16.666 -> 982)
+  const withBoost = calculateStockAtTime({
+    currentStock: 953,
+    baseHourlyRate: 160,
+    cap: 10000,
+    baseTime,
+    tickBaseTime,
+    targetTime: BASE_TIME + 20 * 60000,
+    boosts: [{ id: 'iw', hourlyDelta: 40, count: 1, effectiveAt: BASE_TIME + 16 * 60000 }],
+    tickIntervalMinutes: 5,
+    gridOffsetMs: offsetMs,
+  });
+  assert.equal(withBoost.projectedStock, 983); // 953 + 13.333 + 16.666 = 983
+
+  // 연쇄 공성 자동 ETA도 5분 틱 기준으로 잡히고 모든 단계가 즉시 실행 가능해야 함
+  const autoEta = computeAutoEtaSchedule({
+    currentStock: 953,
+    baseHourlyRate: 160,
+    cap: 10000,
+    baseTime: BASE_TIME + 14 * 60000, // 12:14:00 (12:14:20 정산 직후인 12:14:30 가정)
+    tickBaseTime: BASE_TIME + (14 * 60 + 20) * 1000, // 이미 12:14:20 정산 완료됨
+    events: [
+      { id: 's1', presetId: 'city-4', isConnected: true }, // 500 -> 즉시 가능 (잔여 453)
+      { id: 's2', presetId: 'city-4', isConnected: true }, // 500 -> 47 부족 -> 다음 12:19:20(+13) -> 12:24:20(+13) -> ...
+    ],
+    tickIntervalMinutes: 5,
+    gridOffsetMs: offsetMs,
+  });
+  assert.equal(autoEta.simulation.steps[0].affordable, true);
+  assert.equal(autoEta.simulation.steps[1].affordable, true);
+  assert.equal(autoEta.simulation.steps[1].availableBeforeSpend >= 500, true);
+
+  // 단건 공성 계산기도 5분 틱 격자를 그대로 따름
+  const singleAt15 = calculateSingleSiege({
+    currentStock: 953,
+    baseHourlyRate: 160,
+    cap: 10000,
+    baseTime,
+    tickBaseTime,
+    targetTime: BASE_TIME + 15 * 60000,
+    target: { presetId: 'city-4', customBaseCost: 966, isConnected: true },
+    tickIntervalMinutes: 5,
+    gridOffsetMs: offsetMs,
+  });
+  assert.equal(singleAt15.canAffordAtTarget, true);
+});

@@ -11,6 +11,7 @@ import {
 import {
   alignToTickGrid,
   buildRateSchedule,
+  calculateSingleSiege,
   calculateStockAtTime,
   calculateTargetReach,
   computeAutoEtaSchedule,
@@ -126,10 +127,18 @@ function normalizeLoadedState(parsed, fresh) {
   const cleanedPresets = Array.isArray(parsed.rules?.presets)
     ? parsed.rules.presets.filter((p) => p.id !== 'custom')
     : null;
-  const normalizedRules =
-    cleanedPresets && cleanedPresets.length > 0
-      ? { ...fresh.rules, ...parsed.rules, presets: cleanedPresets }
-      : fresh.rules;
+  const cleanedBrackets =
+    Array.isArray(parsed.rules?.brackets) && parsed.rules.brackets.length > 0
+      ? parsed.rules.brackets
+      : fresh.rules.brackets;
+  const normalizedRules = parsed.rules
+    ? {
+        ...fresh.rules,
+        ...parsed.rules,
+        presets: cleanedPresets && cleanedPresets.length > 0 ? cleanedPresets : fresh.rules.presets,
+        brackets: cleanedBrackets,
+      }
+    : fresh.rules;
   const fallbackPresetId =
     normalizedRules.presets.find((p) => p.id === 'city-11')?.id ??
     normalizedRules.presets[0]?.id ??
@@ -297,6 +306,10 @@ export function App() {
   // 하위 시뮬레이션/PNG 카드는 분 단위로만 재계산해 1초 카운트다운 중 불필요한 캔버스 재렌더 방지
   const minuteSyncedNowMs = Math.floor(liveNowMs / 60000) * 60000;
   const effectiveBaseTimeMs = state.autoSyncEnabled ? minuteSyncedNowMs : state.anchorTimeMs;
+  const effectiveTickBaseMs = state.autoSyncEnabled ? liveAnchor.evalTimeMs : state.anchorTimeMs;
+  const effectiveExactStock = state.autoSyncEnabled
+    ? liveAnchor.exactStock
+    : Math.min(state.cap, Math.max(0, Number(state.anchorStock) || 0));
   const effectiveCurrentStock = state.autoSyncEnabled
     ? liveAnchor.currentStock
     : Math.min(state.cap, Math.floor(state.anchorStock));
@@ -325,7 +338,7 @@ export function App() {
       return {
         ...prev,
         anchorStock: snapshot.exactStock,
-        anchorTimeMs: snapshot.anchorSlotMs,
+        anchorTimeMs: snapshot.evalTimeMs,
         ...buildPatch(prev),
       };
     });
@@ -335,8 +348,8 @@ export function App() {
     setState((prev) => ({ ...prev, rules: { ...prev.rules, ...patch } }));
 
   const rateSchedule = useMemo(
-    () => buildRateSchedule(state.boosts, effectiveBaseTimeMs),
-    [state.boosts, effectiveBaseTimeMs]
+    () => buildRateSchedule(state.boosts, effectiveTickBaseMs),
+    [state.boosts, effectiveTickBaseMs]
   );
 
   const effectiveStartRate = Math.max(0, state.baseHourlyRate + rateSchedule.immediateBoost);
@@ -344,31 +357,38 @@ export function App() {
   const timeToCap = useMemo(
     () =>
       findEarliestAffordableTime({
-        startMs: effectiveBaseTimeMs,
-        initialStock: effectiveCurrentStock,
+        startMs: effectiveTickBaseMs,
+        waitBaseMs: effectiveBaseTimeMs,
+        initialStock: effectiveExactStock,
         initialRate: effectiveStartRate,
         cap: state.cap,
         requiredCost: state.cap,
         scheduledChanges: rateSchedule.scheduledChanges,
+        tickIntervalMinutes: SEASON_META.tickIntervalMinutes,
+        gridOffsetMs: SEASON_META.tickGridOffsetMs,
       }),
-    [effectiveBaseTimeMs, effectiveCurrentStock, effectiveStartRate, state.cap, rateSchedule]
+    [effectiveTickBaseMs, effectiveBaseTimeMs, effectiveExactStock, effectiveStartRate, state.cap, rateSchedule]
   );
 
   const targetReach = useMemo(
     () =>
       calculateTargetReach({
-        currentStock: effectiveCurrentStock,
+        currentStock: effectiveExactStock,
         baseHourlyRate: state.baseHourlyRate,
         cap: state.cap,
         baseTime: effectiveBaseTimeMs,
+        tickBaseTime: effectiveTickBaseMs,
         targetAmount: state.targetGoalAmount ?? 6000,
         boosts: state.boosts,
+        tickIntervalMinutes: SEASON_META.tickIntervalMinutes,
+        gridOffsetMs: SEASON_META.tickGridOffsetMs,
       }),
     [
-      effectiveCurrentStock,
+      effectiveExactStock,
       state.baseHourlyRate,
       state.cap,
       effectiveBaseTimeMs,
+      effectiveTickBaseMs,
       state.targetGoalAmount,
       state.boosts,
     ]
@@ -382,39 +402,77 @@ export function App() {
   const stockAtTime = useMemo(
     () =>
       calculateStockAtTime({
-        currentStock: effectiveCurrentStock,
+        currentStock: effectiveExactStock,
         baseHourlyRate: state.baseHourlyRate,
         cap: state.cap,
         baseTime: effectiveBaseTimeMs,
+        tickBaseTime: effectiveTickBaseMs,
         targetTime: safeTargetCheckTimeMs,
         boosts: state.boosts,
+        tickIntervalMinutes: SEASON_META.tickIntervalMinutes,
+        gridOffsetMs: SEASON_META.tickGridOffsetMs,
       }),
     [
-      effectiveCurrentStock,
+      effectiveExactStock,
       state.baseHourlyRate,
       state.cap,
       effectiveBaseTimeMs,
+      effectiveTickBaseMs,
       safeTargetCheckTimeMs,
       state.boosts,
+    ]
+  );
+
+  const safeSingleTargetTimeMs = Math.max(effectiveBaseTimeMs, state.singleTargetTimeMs);
+
+  const singleResult = useMemo(
+    () =>
+      calculateSingleSiege({
+        currentStock: effectiveExactStock,
+        baseHourlyRate: state.baseHourlyRate,
+        cap: state.cap,
+        baseTime: effectiveBaseTimeMs,
+        tickBaseTime: effectiveTickBaseMs,
+        targetTime: safeSingleTargetTimeMs,
+        target: state.singleTarget,
+        boosts: state.boosts,
+        rules: state.rules,
+        tickIntervalMinutes: SEASON_META.tickIntervalMinutes,
+        gridOffsetMs: SEASON_META.tickGridOffsetMs,
+      }),
+    [
+      effectiveExactStock,
+      state.baseHourlyRate,
+      state.cap,
+      effectiveBaseTimeMs,
+      effectiveTickBaseMs,
+      safeSingleTargetTimeMs,
+      state.singleTarget,
+      state.boosts,
+      state.rules,
     ]
   );
 
   const simulation = useMemo(
     () =>
       simulateTimeline({
-        currentStock: effectiveCurrentStock,
+        currentStock: effectiveExactStock,
         baseHourlyRate: state.baseHourlyRate,
         cap: state.cap,
         baseTime: effectiveBaseTimeMs,
+        tickBaseTime: effectiveTickBaseMs,
         events: state.events,
         boosts: state.boosts,
         rules: state.rules,
+        tickIntervalMinutes: SEASON_META.tickIntervalMinutes,
+        gridOffsetMs: SEASON_META.tickGridOffsetMs,
       }),
     [
-      effectiveCurrentStock,
+      effectiveExactStock,
       state.baseHourlyRate,
       state.cap,
       effectiveBaseTimeMs,
+      effectiveTickBaseMs,
       state.events,
       state.boosts,
       state.rules,
@@ -529,13 +587,16 @@ export function App() {
       .filter(Boolean);
 
     const { events: scheduledEvents } = computeAutoEtaSchedule({
-      currentStock: effectiveCurrentStock,
+      currentStock: effectiveExactStock,
       baseHourlyRate: state.baseHourlyRate,
       cap: state.cap,
       baseTime: effectiveBaseTimeMs,
+      tickBaseTime: effectiveTickBaseMs,
       events: orderedEvents,
       boosts: state.boosts,
       rules: state.rules,
+      tickIntervalMinutes: SEASON_META.tickIntervalMinutes,
+      gridOffsetMs: SEASON_META.tickGridOffsetMs,
     });
 
     updateState({ events: scheduledEvents });
@@ -756,17 +817,15 @@ export function App() {
           {state.activeTab === 'single' ? (
             <QuickCalculator
               baseTimeMs={effectiveBaseTimeMs}
-              currentStock={effectiveCurrentStock}
-              baseHourlyRate={state.baseHourlyRate}
               cap={state.cap}
-              boosts={state.boosts}
               rules={state.rules}
               target={state.singleTarget}
               onTargetChange={(singleTarget) => updateState({ singleTarget })}
-              targetTimeMs={Math.max(effectiveBaseTimeMs, state.singleTargetTimeMs)}
+              targetTimeMs={safeSingleTargetTimeMs}
               onTargetTimeChange={(singleTargetTimeMs) =>
                 updateState({ singleTargetTimeMs: Math.max(effectiveBaseTimeMs, singleTargetTimeMs) })
               }
+              result={singleResult}
               onAddToTimeline={handleAddEvent}
             />
           ) : (
@@ -794,12 +853,8 @@ export function App() {
           routeName={state.routeName}
           baseTimeMs={effectiveBaseTimeMs}
           currentStock={effectiveCurrentStock}
-          baseHourlyRate={state.baseHourlyRate}
           cap={state.cap}
-          boosts={state.boosts}
-          rules={state.rules}
-          singleTarget={state.singleTarget}
-          singleTargetTimeMs={state.singleTargetTimeMs}
+          singleResult={singleResult}
           simulation={simulation}
         />
       </main>

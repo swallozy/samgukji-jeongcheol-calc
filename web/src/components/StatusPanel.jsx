@@ -166,17 +166,32 @@ export function StatusPanel({
         <div className="field">
           <label htmlFor="base-time-input">
             <span>기준 시각</span>
-            <Clock size={13} />
+            {autoSyncEnabled ? (
+              <span className="muted-note">자동 (일시정지 시 편집)</span>
+            ) : (
+              <Clock size={13} />
+            )}
           </label>
-          <DateTimePicker
-            id="base-time-input"
-            variant="popover"
-            allowPast
-            showNudge={false}
-            valueMs={baseTimeMs}
-            onChange={onBaseTimeChange}
-            showQuickPresets={false}
-          />
+          {autoSyncEnabled ? (
+            <div
+              className="dtp-trigger dtp-locked num"
+              title="실시간 자동 동기화 중에는 현재 시각으로 자동 갱신됩니다. 기준 시각을 직접 설정하려면 우측 [일시정지 (수동 고정)]을 눌러 주세요."
+            >
+              <Clock size={13} color="#34d399" />
+              <span>{formatDateTimeKST(baseTimeMs)}</span>
+              <span className="dtp-lock-tag">실시간</span>
+            </div>
+          ) : (
+            <DateTimePicker
+              id="base-time-input"
+              variant="popover"
+              allowPast
+              showNudge={false}
+              valueMs={baseTimeMs}
+              onChange={onBaseTimeChange}
+              showQuickPresets={false}
+            />
+          )}
         </div>
 
         <div className="field">
@@ -479,14 +494,14 @@ export function StatusPanel({
                   minTimeMs={baseTimeMs}
                   valueMs={targetCheckTimeMs}
                   onChange={onTargetCheckTimeChange}
-                  quickPresets={quickCheckTimes}
+                  showQuickPresets={false}
                 />
                 <div className="chip-row">
                   {quickCheckTimes.map((preset) => (
                     <button
                       key={preset.label}
                       type="button"
-                      className="chip"
+                      className={`chip ${Math.abs(targetCheckTimeMs - preset.ms) < 60000 ? 'active' : ''}`}
                       onClick={() => onTargetCheckTimeChange(preset.ms)}
                     >
                       {preset.label}

@@ -1,38 +1,21 @@
 import React from 'react';
 import { AlertTriangle, CalendarPlus, CheckCircle2, Clock, XCircle } from 'lucide-react';
-import {
-  calculateSingleSiege,
-  formatDateTimeKST,
-  formatDuration,
-} from '@jeongcheol/core';
+import { formatDateTimeKST, formatDuration } from '@jeongcheol/core';
 import { SiegeTargetForm } from './SiegeTargetForm.jsx';
 import { DateTimePicker } from './DateTimePicker.jsx';
 
 export function QuickCalculator({
   baseTimeMs,
-  currentStock,
-  baseHourlyRate,
   cap,
-  boosts,
   rules,
   target,
   onTargetChange,
   targetTimeMs,
   onTargetTimeChange,
+  result,
   onAddToTimeline,
 }) {
   const safeTargetTimeMs = Math.max(baseTimeMs, targetTimeMs);
-
-  const result = calculateSingleSiege({
-    currentStock,
-    baseHourlyRate,
-    cap,
-    baseTime: baseTimeMs,
-    targetTime: safeTargetTimeMs,
-    target,
-    boosts,
-    rules,
-  });
 
   const isExceedCap = result.earliest.status === 'exceeds_cap';
   const isBlocked = result.cost.blockedByNoCityRule || isExceedCap;

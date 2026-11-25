@@ -8,6 +8,18 @@ import {
 
 const HOUR_MS = 3600000;
 const MINUTE_MS = 60000;
+const STOCK_EPS = 1e-9;
+
+function resolveTickTiming(tickIntervalMinutes = 0, gridOffsetMs = 0) {
+  const safeMinutes = Math.max(0, Number(tickIntervalMinutes) || 0);
+  const tickMs = safeMinutes * MINUTE_MS;
+  const normalizedOffset = tickMs > 0 ? ((gridOffsetMs % tickMs) + tickMs) % tickMs : 0;
+  return { tickMinutes: safeMinutes, tickMs, normalizedOffset };
+}
+
+function slotIndexAtOrBefore(ms, tickMs, normalizedOffset) {
+  return Math.floor((ms - normalizedOffset) / tickMs);
+}
 
 /**
  * 시각 값을 안전하게 epoch ms로 변환합니다.
@@ -197,6 +209,7 @@ export function buildRateSchedule(boosts = [], baseTimeMs) {
 /**
  * [startMs, endMs] 구간 동안 보유 상한과 구간별 생산량 변화를 반영해
  * 최종 보유량과 상한 초과로 증발한 손실량을 계산합니다.
+ * tickIntervalMinutes > 0이면 고정 정산 격자(+gridOffsetMs)에 맞춰 계단 정산합니다.
  */
 function advanceStock({
   startMs,
@@ -205,6 +218,8 @@ function advanceStock({
   initialRate,
   cap,
   scheduledChanges,
+  tickIntervalMinutes = 0,
+  gridOffsetMs = 0,
 }) {
   if (endMs <= startMs) {
     const clamped = Math.min(cap, initialStock);
@@ -215,16 +230,66 @@ function advanceStock({
     };
   }
 
+  const { tickMinutes, tickMs, normalizedOffset } = resolveTickTiming(
+    tickIntervalMinutes,
+    gridOffsetMs
+  );
+
+  if (tickMs > 0) {
+    const startK = slotIndexAtOrBefore(startMs, tickMs, normalizedOffset);
+    const endK = slotIndexAtOrBefore(endMs, tickMs, normalizedOffset);
+    let cursorK = startK;
+    let stock = Math.min(cap, initialStock);
+    let overflow = Math.max(0, initialStock - stock);
+    let currentRate = initialRate;
+    const postTickRateChanges = [];
+
+    const applyTickGain = (tickCount) => {
+      if (tickCount <= 0 || currentRate <= 0) return;
+      const gained = (currentRate * tickCount * tickMinutes) / 60;
+      const nextRaw = stock + gained;
+      if (nextRaw > cap) {
+        overflow += nextRaw - cap;
+        stock = cap;
+      } else {
+        stock = nextRaw;
+      }
+    };
+
+    for (const change of scheduledChanges) {
+      if (change.timeMs <= startMs) continue;
+      const changeK = Math.ceil((change.timeMs - normalizedOffset) / tickMs);
+      if (changeK > endK) {
+        if (change.timeMs <= endMs) {
+          postTickRateChanges.push(change);
+        }
+        continue;
+      }
+      if (changeK - 1 > cursorK) {
+        applyTickGain(changeK - 1 - cursorK);
+        cursorK = changeK - 1;
+      }
+      currentRate = Math.max(0, currentRate + change.delta);
+    }
+
+    if (endK > cursorK) {
+      applyTickGain(endK - cursorK);
+    }
+
+    for (const change of postTickRateChanges) {
+      currentRate = Math.max(0, currentRate + change.delta);
+    }
+
+    return { stock, overflow, finalRate: currentRate };
+  }
+
   let cursorMs = startMs;
   let stock = Math.min(cap, initialStock);
   let overflow = Math.max(0, initialStock - stock);
   let currentRate = initialRate;
 
   for (const change of scheduledChanges) {
-    if (change.timeMs <= startMs) {
-      currentRate = Math.max(0, currentRate + change.delta);
-      continue;
-    }
+    if (change.timeMs <= startMs) continue;
     if (change.timeMs >= endMs) break;
 
     if (change.timeMs > cursorMs) {
@@ -268,12 +333,69 @@ export function findEarliestAffordableTime({
   cap,
   requiredCost,
   scheduledChanges = [],
+  tickIntervalMinutes = 0,
+  gridOffsetMs = 0,
+  waitBaseMs,
 }) {
-  if (requiredCost <= initialStock) {
-    return { status: 'ready', timeMs: startMs, waitMs: 0 };
+  const safeWaitBase = Number.isFinite(waitBaseMs) ? waitBaseMs : startMs;
+  const displayInitialStock = Math.floor(Math.min(cap, initialStock) + STOCK_EPS);
+  if (requiredCost <= displayInitialStock) {
+    return { status: 'ready', timeMs: safeWaitBase, waitMs: 0 };
   }
   if (requiredCost > cap) {
     return { status: 'exceeds_cap', timeMs: null, waitMs: null };
+  }
+
+  const { tickMinutes, tickMs, normalizedOffset } = resolveTickTiming(
+    tickIntervalMinutes,
+    gridOffsetMs
+  );
+
+  if (tickMs > 0) {
+    const startK = slotIndexAtOrBefore(startMs, tickMs, normalizedOffset);
+    let cursorK = startK;
+    let stock = Math.min(cap, initialStock);
+    let currentRate = initialRate;
+
+    const resolveTicksInSegment = (rate, maxTicks) => {
+      if (rate <= 0) return null;
+      let neededTicks = Math.max(
+        1,
+        Math.ceil(((requiredCost - stock - STOCK_EPS) * 60) / (rate * tickMinutes))
+      );
+      while (stock + (rate * neededTicks * tickMinutes) / 60 + STOCK_EPS < requiredCost) {
+        neededTicks += 1;
+      }
+      if (neededTicks > maxTicks) return null;
+      const exactTickMs = (cursorK + neededTicks) * tickMs + normalizedOffset;
+      const minuteAlignedMs = Math.max(
+        safeWaitBase,
+        Math.ceil(exactTickMs / MINUTE_MS) * MINUTE_MS
+      );
+      return {
+        status: 'wait',
+        timeMs: minuteAlignedMs,
+        exactTickMs,
+        waitMs: Math.max(0, minuteAlignedMs - safeWaitBase),
+      };
+    };
+
+    for (const change of scheduledChanges) {
+      if (change.timeMs <= startMs) continue;
+      const changeK = Math.ceil((change.timeMs - normalizedOffset) / tickMs);
+      const preTicks = changeK - 1 - cursorK;
+      if (preTicks > 0) {
+        const hit = resolveTicksInSegment(currentRate, preTicks);
+        if (hit) return hit;
+        stock = Math.min(cap, stock + (currentRate * preTicks * tickMinutes) / 60);
+        cursorK = changeK - 1;
+      }
+      currentRate = Math.max(0, currentRate + change.delta);
+    }
+
+    const hit = resolveTicksInSegment(currentRate, Infinity);
+    if (hit) return hit;
+    return { status: 'no_production', timeMs: null, waitMs: null };
   }
 
   let cursorMs = startMs;
@@ -281,17 +403,14 @@ export function findEarliestAffordableTime({
   let currentRate = initialRate;
 
   for (const change of scheduledChanges) {
-    if (change.timeMs <= startMs) {
-      currentRate = Math.max(0, currentRate + change.delta);
-      continue;
-    }
+    if (change.timeMs <= startMs) continue;
     const segHours = (change.timeMs - cursorMs) / HOUR_MS;
     const segGain = currentRate * segHours;
 
     if (currentRate > 0 && stock + segGain >= requiredCost) {
       const neededHours = (requiredCost - stock) / currentRate;
       const reachMs = Math.ceil(cursorMs + neededHours * HOUR_MS);
-      return { status: 'wait', timeMs: reachMs, waitMs: reachMs - startMs };
+      return { status: 'wait', timeMs: reachMs, waitMs: Math.max(0, reachMs - safeWaitBase) };
     }
 
     stock = Math.min(cap, stock + segGain);
@@ -305,7 +424,7 @@ export function findEarliestAffordableTime({
 
   const neededHours = (requiredCost - stock) / currentRate;
   const reachMs = Math.ceil(cursorMs + neededHours * HOUR_MS);
-  return { status: 'wait', timeMs: reachMs, waitMs: reachMs - startMs };
+  return { status: 'wait', timeMs: reachMs, waitMs: Math.max(0, reachMs - safeWaitBase) };
 }
 
 /**
@@ -318,43 +437,53 @@ export function calculateStockAtTime({
   baseTime = Date.now(),
   targetTime,
   boosts = [],
+  tickIntervalMinutes = 0,
+  gridOffsetMs = 0,
+  tickBaseTime,
 } = {}) {
   const baseMs = toEpochMs(baseTime);
+  const parsedTickBase = tickBaseTime ? toEpochMs(tickBaseTime) : NaN;
+  const tickBaseMs = Number.isFinite(parsedTickBase) ? parsedTickBase : baseMs;
   const targetMs = targetTime ? toEpochMs(targetTime) : baseMs;
   const safeCap = Math.max(1, clampNonNegative(cap, SEASON_META.defaultCap));
-  const safeStock = Math.min(safeCap, clampNonNegative(currentStock, 0));
+  const safeExactStock = Math.min(safeCap, clampNonNegative(currentStock, 0));
+  const displayStock = Math.floor(safeExactStock + STOCK_EPS);
   const safeBaseRate = clampNonNegative(baseHourlyRate, 0);
 
-  const { immediateBoost, scheduledChanges } = buildRateSchedule(boosts, baseMs);
+  const { immediateBoost, scheduledChanges } = buildRateSchedule(boosts, tickBaseMs);
   const effectiveStartRate = Math.max(0, safeBaseRate + immediateBoost);
 
   const isInvalidTargetTime = !Number.isFinite(targetMs) || targetMs < baseMs;
   const evalEndMs = isInvalidTargetTime ? baseMs : targetMs;
 
   const { stock: exactProjected, overflow, finalRate } = advanceStock({
-    startMs: baseMs,
+    startMs: tickBaseMs,
     endMs: evalEndMs,
-    initialStock: safeStock,
+    initialStock: safeExactStock,
     initialRate: effectiveStartRate,
     cap: safeCap,
     scheduledChanges,
+    tickIntervalMinutes,
+    gridOffsetMs,
   });
 
-  const projectedStock = Math.floor(exactProjected);
-  const overflowLoss = Math.floor(overflow);
+  const projectedStock = Math.floor(exactProjected + STOCK_EPS);
+  const overflowLoss = Math.floor(overflow + STOCK_EPS);
 
   return {
     baseTimeMs: baseMs,
+    tickBaseTimeMs: tickBaseMs,
     targetTimeMs: evalEndMs,
     elapsedMs: Math.max(0, evalEndMs - baseMs),
     isInvalidTargetTime,
-    currentStock: safeStock,
+    currentStock: displayStock,
+    exactStock: safeExactStock,
     cap: safeCap,
     effectiveStartRate,
     finalRate,
     projectedStock,
     exactProjected,
-    netGain: projectedStock - safeStock,
+    netGain: projectedStock - displayStock,
     overflowLoss,
     reachedCap: projectedStock >= safeCap,
     scheduledChanges,
@@ -373,6 +502,9 @@ export function calculateSingleSiege({
   target = {},
   boosts = [],
   rules = {},
+  tickIntervalMinutes = 0,
+  gridOffsetMs = 0,
+  tickBaseTime,
 } = {}) {
   const projection = calculateStockAtTime({
     currentStock,
@@ -381,6 +513,9 @@ export function calculateSingleSiege({
     baseTime,
     targetTime,
     boosts,
+    tickIntervalMinutes,
+    gridOffsetMs,
+    tickBaseTime,
   });
 
   const cost = calculateSiegeCost(target, rules);
@@ -388,12 +523,15 @@ export function calculateSingleSiege({
   const deficit = Math.max(0, cost.totalCost - projection.projectedStock);
 
   const earliest = findEarliestAffordableTime({
-    startMs: projection.baseTimeMs,
-    initialStock: projection.currentStock,
+    startMs: projection.tickBaseTimeMs,
+    waitBaseMs: projection.baseTimeMs,
+    initialStock: projection.exactStock,
     initialRate: projection.effectiveStartRate,
     cap: projection.cap,
     requiredCost: cost.totalCost,
     scheduledChanges: projection.scheduledChanges,
+    tickIntervalMinutes,
+    gridOffsetMs,
   });
 
   return {
@@ -425,29 +563,38 @@ export function calculateTargetReach({
   baseTime = Date.now(),
   targetAmount = 6000,
   boosts = [],
+  tickIntervalMinutes = 0,
+  gridOffsetMs = 0,
+  tickBaseTime,
 } = {}) {
   const baseMs = toEpochMs(baseTime);
+  const parsedTickBase = tickBaseTime ? toEpochMs(tickBaseTime) : NaN;
+  const tickBaseMs = Number.isFinite(parsedTickBase) ? parsedTickBase : baseMs;
   const safeCap = Math.max(1, clampNonNegative(cap, SEASON_META.defaultCap));
-  const safeStock = Math.min(safeCap, clampNonNegative(currentStock, 0));
+  const safeExactStock = Math.min(safeCap, clampNonNegative(currentStock, 0));
+  const displayStock = Math.floor(safeExactStock + STOCK_EPS);
   const safeBaseRate = clampNonNegative(baseHourlyRate, 0);
   const safeTarget = clampNonNegative(targetAmount, 0);
 
-  const { immediateBoost, scheduledChanges } = buildRateSchedule(boosts, baseMs);
+  const { immediateBoost, scheduledChanges } = buildRateSchedule(boosts, tickBaseMs);
   const effectiveStartRate = Math.max(0, safeBaseRate + immediateBoost);
-  const neededAmount = Math.max(0, safeTarget - safeStock);
+  const neededAmount = Math.max(0, safeTarget - displayStock);
 
   const reach = findEarliestAffordableTime({
-    startMs: baseMs,
-    initialStock: safeStock,
+    startMs: tickBaseMs,
+    waitBaseMs: baseMs,
+    initialStock: safeExactStock,
     initialRate: effectiveStartRate,
     cap: safeCap,
     requiredCost: safeTarget,
     scheduledChanges,
+    tickIntervalMinutes,
+    gridOffsetMs,
   });
 
   return {
     baseTimeMs: baseMs,
-    currentStock: safeStock,
+    currentStock: displayStock,
     cap: safeCap,
     targetAmount: safeTarget,
     neededAmount,
@@ -513,6 +660,8 @@ export function resolveLiveAnchorStock({
             baseTime: anchorSlotMs,
             targetTime: nextTick,
             boosts,
+            tickIntervalMinutes: safeTickMinutes,
+            gridOffsetMs: alignToClockGrid ? gridOffsetMs : anchorSlotMs,
           })
         : null;
 
@@ -549,6 +698,8 @@ export function resolveLiveAnchorStock({
     baseTime: anchorSlotMs,
     targetTime: evalTimeMs,
     boosts,
+    tickIntervalMinutes: safeTickMinutes,
+    gridOffsetMs: alignToClockGrid ? gridOffsetMs : anchorSlotMs,
   });
 
   let nextTickTimeMs = null;
@@ -565,6 +716,8 @@ export function resolveLiveAnchorStock({
       baseTime: anchorSlotMs,
       targetTime: nextTickTimeMs,
       boosts,
+      tickIntervalMinutes: safeTickMinutes,
+      gridOffsetMs: alignToClockGrid ? gridOffsetMs : anchorSlotMs,
     });
     nextTickGain = Math.max(0, nextProjection.projectedStock - projection.projectedStock);
   }
@@ -602,13 +755,19 @@ export function simulateTimeline({
   boosts = [],
   rules = {},
   preserveOrder = false,
+  tickIntervalMinutes = 0,
+  gridOffsetMs = 0,
+  tickBaseTime,
 } = {}) {
   const baseMs = toEpochMs(baseTime);
+  const parsedTickBase = tickBaseTime ? toEpochMs(tickBaseTime) : NaN;
+  const tickBaseMs = Number.isFinite(parsedTickBase) ? parsedTickBase : baseMs;
   const safeCap = Math.max(1, clampNonNegative(cap, SEASON_META.defaultCap));
-  const safeStock = Math.min(safeCap, clampNonNegative(currentStock, 0));
+  const safeExactStock = Math.min(safeCap, clampNonNegative(currentStock, 0));
+  const displayStock = Math.floor(safeExactStock + STOCK_EPS);
   const safeBaseRate = clampNonNegative(baseHourlyRate, 0);
 
-  const { immediateBoost, scheduledChanges } = buildRateSchedule(boosts, baseMs);
+  const { immediateBoost, scheduledChanges } = buildRateSchedule(boosts, tickBaseMs);
   const effectiveStartRate = Math.max(0, safeBaseRate + immediateBoost);
 
   const mappedEvents = events
@@ -627,7 +786,8 @@ export function simulateTimeline({
     : [...mappedEvents].sort((a, b) => a.scheduledMs - b.scheduledMs || a.originalIndex - b.originalIndex);
 
   let cursorMs = baseMs;
-  let stock = safeStock;
+  let cursorTickMs = tickBaseMs;
+  let stock = safeExactStock;
   let currentRate = effectiveStartRate;
   let totalCost = 0;
   let totalOverflow = 0;
@@ -646,26 +806,31 @@ export function simulateTimeline({
     const cost = calculateSiegeCost(ev, stepRules);
 
     const earliest = findEarliestAffordableTime({
-      startMs: cursorMs,
+      startMs: cursorTickMs,
+      waitBaseMs: cursorMs,
       initialStock: stock,
       initialRate: currentRate,
       cap: safeCap,
       requiredCost: cost.totalCost,
       scheduledChanges,
+      tickIntervalMinutes,
+      gridOffsetMs,
     });
 
     const advanced = advanceStock({
-      startMs: cursorMs,
+      startMs: cursorTickMs,
       endMs: stepEndMs,
       initialStock: stock,
       initialRate: currentRate,
       cap: safeCap,
       scheduledChanges,
+      tickIntervalMinutes,
+      gridOffsetMs,
     });
 
     const exactBeforeSpend = advanced.stock;
-    const availableBeforeSpend = Math.floor(exactBeforeSpend);
-    const overflowOnLeg = Math.floor(advanced.overflow);
+    const availableBeforeSpend = Math.floor(exactBeforeSpend + STOCK_EPS);
+    const overflowOnLeg = Math.floor(advanced.overflow + STOCK_EPS);
     const deficit = Math.max(0, cost.totalCost - availableBeforeSpend);
     const affordable = deficit === 0;
     const exceedsCap = cost.totalCost > safeCap;
@@ -688,6 +853,7 @@ export function simulateTimeline({
     totalOverflow += overflowOnLeg;
 
     cursorMs = stepEndMs;
+    cursorTickMs = Math.max(cursorTickMs, stepEndMs);
     stock = exactAfterSpend;
     currentRate = advanced.finalRate;
 
@@ -709,17 +875,20 @@ export function simulateTimeline({
   });
 
   const timeToFull = findEarliestAffordableTime({
-    startMs: cursorMs,
+    startMs: cursorTickMs,
+    waitBaseMs: cursorMs,
     initialStock: stock,
     initialRate: currentRate,
     cap: safeCap,
     requiredCost: safeCap,
     scheduledChanges,
+    tickIntervalMinutes,
+    gridOffsetMs,
   });
 
   return {
     baseTimeMs: baseMs,
-    currentStock: safeStock,
+    currentStock: displayStock,
     cap: safeCap,
     effectiveStartRate,
     finalRate: currentRate,
@@ -733,7 +902,7 @@ export function simulateTimeline({
       hasCapExceed,
       hasNoCityRuleBlock,
       hasAnyOverflow: totalOverflow > 0,
-      finalStock: Math.floor(stock),
+      finalStock: Math.floor(stock + STOCK_EPS),
       totalWaitMs: steps.length > 0 ? steps[steps.length - 1].waitFromBaseMs : 0,
       timeToFull,
     },
@@ -752,15 +921,21 @@ export function computeAutoEtaSchedule({
   events = [],
   boosts = [],
   rules = {},
+  tickIntervalMinutes = 0,
+  gridOffsetMs = 0,
+  tickBaseTime,
 } = {}) {
   const baseMs = toEpochMs(baseTime);
+  const parsedTickBase = tickBaseTime ? toEpochMs(tickBaseTime) : NaN;
+  const tickBaseMs = Number.isFinite(parsedTickBase) ? parsedTickBase : baseMs;
   const safeCap = Math.max(1, clampNonNegative(cap, SEASON_META.defaultCap));
-  const safeStock = Math.min(safeCap, clampNonNegative(currentStock, 0));
+  const safeExactStock = Math.min(safeCap, clampNonNegative(currentStock, 0));
   const safeBaseRate = clampNonNegative(baseHourlyRate, 0);
 
-  const { immediateBoost, scheduledChanges } = buildRateSchedule(boosts, baseMs);
+  const { immediateBoost, scheduledChanges } = buildRateSchedule(boosts, tickBaseMs);
   let cursorMs = baseMs;
-  let stock = safeStock;
+  let cursorTickMs = tickBaseMs;
+  let stock = safeExactStock;
   let currentRate = Math.max(0, safeBaseRate + immediateBoost);
   let hasAllianceCityYet = !(rules.allianceHasNoCities ?? false);
 
@@ -773,24 +948,30 @@ export function computeAutoEtaSchedule({
     if (!cost.blockedByNoCityRule) hasAllianceCityYet = true;
 
     const earliest = findEarliestAffordableTime({
-      startMs: cursorMs,
+      startMs: cursorTickMs,
+      waitBaseMs: cursorMs,
       initialStock: stock,
       initialRate: currentRate,
       cap: safeCap,
       requiredCost: cost.totalCost,
       scheduledChanges,
+      tickIntervalMinutes,
+      gridOffsetMs,
     });
 
     if (earliest.timeMs !== null) {
       const advanced = advanceStock({
-        startMs: cursorMs,
+        startMs: cursorTickMs,
         endMs: earliest.timeMs,
         initialStock: stock,
         initialRate: currentRate,
         cap: safeCap,
         scheduledChanges,
+        tickIntervalMinutes,
+        gridOffsetMs,
       });
       cursorMs = earliest.timeMs;
+      cursorTickMs = Math.max(cursorTickMs, earliest.timeMs);
       stock = Math.max(0, advanced.stock - cost.totalCost);
       currentRate = advanced.finalRate;
       return { ...ev, scheduledAt: earliest.timeMs };
@@ -802,14 +983,17 @@ export function computeAutoEtaSchedule({
   return {
     events: scheduledEvents,
     simulation: simulateTimeline({
-      currentStock: safeStock,
+      currentStock: safeExactStock,
       baseHourlyRate: safeBaseRate,
       cap: safeCap,
       baseTime: baseMs,
+      tickBaseTime: tickBaseMs,
       events: scheduledEvents,
       boosts,
       rules,
       preserveOrder: true,
+      tickIntervalMinutes,
+      gridOffsetMs,
     }),
   };
 }

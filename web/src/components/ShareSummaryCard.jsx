@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check, Copy, Download, Image as ImageIcon, MessageSquareShare } from 'lucide-react';
 import {
-  calculateSingleSiege,
   formatDateTimeKST,
   formatDuration,
   formatTimelineSummary,
@@ -15,12 +14,8 @@ export function ShareSummaryCard({
   routeName,
   baseTimeMs,
   currentStock,
-  baseHourlyRate,
   cap,
-  boosts,
-  rules,
-  singleTarget,
-  singleTargetTimeMs,
+  singleResult,
   simulation,
 }) {
   const [viewMode, setViewMode] = useState('image');
@@ -29,21 +24,6 @@ export function ShareSummaryCard({
   const [copiedImage, setCopiedImage] = useState(false);
   const [cardPreviewUrl, setCardPreviewUrl] = useState('');
   const [cardBlob, setCardBlob] = useState(null);
-
-  const singleResult = useMemo(
-    () =>
-      calculateSingleSiege({
-        currentStock,
-        baseHourlyRate,
-        cap,
-        baseTime: baseTimeMs,
-        targetTime: singleTargetTimeMs,
-        target: singleTarget,
-        boosts,
-        rules,
-      }),
-    [currentStock, baseHourlyRate, cap, baseTimeMs, singleTargetTimeMs, singleTarget, boosts, rules]
-  );
 
   const singleConnectionTag =
     singleResult.cost.penaltyExemptReason === 'no_city'
