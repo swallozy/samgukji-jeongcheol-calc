@@ -1,12 +1,11 @@
 import React from 'react';
 import { BookOpen, Plus, RotateCcw, Trash2, X } from 'lucide-react';
-import { IRONWORKS_LEVELS, SEASON_META } from '@jeongcheol/core';
+import { IRONWORKS_LEVELS } from '@jeongcheol/core';
 
 export function ReferenceModal({ open, onClose, rules, onUpdateRules, onResetRules }) {
   if (!open) return null;
 
   const editablePresets = rules.presets.filter((p) => p.id !== 'custom');
-  const customPreset = rules.presets.find((p) => p.id === 'custom');
 
   const updatePreset = (id, patch) => {
     onUpdateRules({
@@ -31,9 +30,7 @@ export function ReferenceModal({ open, onClose, rules, onUpdateRules, onResetRul
       baseCost: 1500,
       verified: false,
     };
-    const nextPresets = [...editablePresets, newItem];
-    if (customPreset) nextPresets.push(customPreset);
-    onUpdateRules({ ...rules, presets: nextPresets });
+    onUpdateRules({ ...rules, presets: [...editablePresets, newItem] });
   };
 
   const updateBracket = (id, patch) => {
@@ -101,10 +98,10 @@ export function ReferenceModal({ open, onClose, rules, onUpdateRules, onResetRul
             }}
           >
             <strong style={{ color: '#f5c66b', display: 'block', marginBottom: '4px' }}>
-              인게임 공식 [공성 주둔지 · 성지 연결 규칙]
+              인게임 공식 [성지 연결 규칙 · 공성 주둔지 소모 기준]
             </strong>
             <div>
-              1. 패업 <strong>[{SEASON_META.connectionRulePhaseName}]</strong> 단계 도달 시 성지 연결 메커니즘이 해금(해제)됩니다.
+              1. <strong>성지 연결 규칙</strong> 적용 시 성지 점령에 아군 성지·관문과의 관로 연결 상태가 반영됩니다.
             </div>
             <div>
               2. 아군 성지·관문과 <strong>관로</strong>로 연결되지 않으면 레벨별 단가가 적용되며, 여러 성지를 가로지르면{' '}
@@ -300,13 +297,6 @@ export function ReferenceModal({ open, onClose, rules, onUpdateRules, onResetRul
                   </td>
                   <td>
                     <span className="badge badge-emerald">확인됨</span>
-                  </td>
-                </tr>
-                <tr>
-                  <td>난공불락 등 특수 소모</td>
-                  <td>미확인</td>
-                  <td>
-                    <span className="badge badge-amber">목표 &apos;직접 입력&apos; 또는 기타 소모 활용</span>
                   </td>
                 </tr>
               </tbody>

@@ -5,13 +5,13 @@ import { calculateSiegeCost, findBracketPenalty } from '@jeongcheol/core';
  * 단건 계산기와 타임라인 편집기에서 공용으로 사용하는 목표/관로/타진영 설정 폼
  */
 export function SiegeTargetForm({ value, onChange, rules, isFirstNoCityStep = true }) {
-  const presets = rules.presets;
+  const presets = rules.presets.filter((p) => p.id !== 'custom');
   const effectiveRules = isFirstNoCityStep
     ? rules
     : { ...rules, allianceHasNoCities: false };
 
   const cost = calculateSiegeCost(value, effectiveRules);
-  const selectedPreset = presets.find((p) => p.id === value.presetId);
+  const selectedPreset = presets.find((p) => p.id === value.presetId) ?? presets[0];
   const bracketInfo = findBracketPenalty(cost.level, rules.brackets);
 
   const patch = (next) => onChange({ ...value, ...next });
@@ -23,21 +23,17 @@ export function SiegeTargetForm({ value, onChange, rules, isFirstNoCityStep = tr
           <label>목표 성지 · 관문 등급</label>
           <select
             className="select"
-            value={value.presetId}
+            value={selectedPreset?.id || ''}
             onChange={(e) => {
-              const nextId = e.target.value;
-              const found = presets.find((p) => p.id === nextId);
               patch({
-                presetId: nextId,
-                customBaseCost: found && nextId !== 'custom' ? '' : value.customBaseCost ?? 500,
+                presetId: e.target.value,
+                customBaseCost: '',
               });
             }}
           >
             {presets.map((preset) => (
               <option key={preset.id} value={preset.id}>
-                {preset.id === 'custom'
-                  ? preset.label
-                  : `${preset.label} (기본 ${preset.baseCost.toLocaleString()})`}
+                {`${preset.label} (기본 ${preset.baseCost.toLocaleString()})`}
               </option>
             ))}
           </select>
@@ -59,31 +55,25 @@ export function SiegeTargetForm({ value, onChange, rules, isFirstNoCityStep = tr
         <div className="field">
           <label>
             <span>기본 정철 소모량</span>
-            {value.presetId !== 'custom' && (
-              <span className="muted-note">비워두면 등급 기본값 사용</span>
-            )}
+            <span className="muted-note">비워두면 등급 기본값 사용</span>
           </label>
           <input
             type="number"
             min="0"
             className="input num"
             placeholder={String(selectedPreset?.baseCost ?? 0)}
-            value={value.presetId === 'custom' ? value.customBaseCost ?? 0 : value.customBaseCost ?? ''}
+            value={value.customBaseCost ?? ''}
             onChange={(e) =>
               patch({
                 customBaseCost:
-                  e.target.value === ''
-                    ? value.presetId === 'custom'
-                      ? 0
-                      : ''
-                    : Math.max(0, Number(e.target.value) || 0),
+                  e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0),
               })
             }
           />
         </div>
 
         <div className="field">
-          <label>기타 추가 소모 (주둔지/대영 등)</label>
+          <label>기타 추가 소모 (동맹 주둔지/대영 등)</label>
           <input
             type="number"
             min="0"
@@ -98,25 +88,6 @@ export function SiegeTargetForm({ value, onChange, rules, isFirstNoCityStep = tr
           />
         </div>
       </div>
-
-      {value.presetId === 'custom' && (
-        <div className="field">
-          <label>목표 성지 · 관문 레벨 (연결 페널티 및 9렙 제한 판정용)</label>
-          <input
-            type="number"
-            min="1"
-            max="20"
-            className="input num"
-            placeholder="예: 12"
-            value={value.customLevel ?? ''}
-            onChange={(e) =>
-              patch({
-                customLevel: e.target.value === '' ? '' : Math.max(1, Number(e.target.value) || 1),
-              })
-            }
-          />
-        </div>
-      )}
 
       <div className="form-grid-2">
         <div className="field">
@@ -191,7 +162,7 @@ export function SiegeTargetForm({ value, onChange, rules, isFirstNoCityStep = tr
             </div>
           ) : cost.penaltyExemptReason === 'pre_phase' ? (
             <div className="muted-note" style={{ color: '#7dd3fc' }}>
-              ℹ️ 규칙 1 적용: 패업 [이릉의 결전] 단계 이전으로 설정되어 거리 페널티가 적용되지 않습니다.
+              ℹ️ 성지 연결 규칙이 미적용 상태로 설정되어 거리 페널티가 적용되지 않습니다.
             </div>
           ) : (
             <>

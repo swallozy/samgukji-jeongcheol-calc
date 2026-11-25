@@ -54,10 +54,10 @@ export function findBracketPenalty(level, brackets = LEVEL_BRACKET_PENALTIES) {
 }
 
 /**
- * 목표(공성지/관문/커스텀 시설)의 총 정철 소모량을 계산합니다.
+ * 목표(공성지/관문)의 총 정철 소모량을 계산합니다.
  *
  * 인게임 [성지 연결 규칙]:
- * 1. 패업 [이릉의 결전] 단계부터 성지 연결 메커니즘 적용
+ * 1. 성지 연결 규칙 적용 시 관로 연결 상태에 따라 추가 소모량 반영
  * 2. 관로 경로 기준 인접하지 않을 경우: 목표 레벨 구간 단가 × 거리 간격(칸 수) 추가 소모
  * 3. 동맹 보유 성지 0개 시: 9레벨 이하만 점령 가능하며 기본 수량만 소모
  *
@@ -68,10 +68,13 @@ export function calculateSiegeCost(target = {}, rules = {}) {
   const presets = rules.presets ?? SIEGE_TARGET_PRESETS;
   const brackets = rules.brackets ?? LEVEL_BRACKET_PENALTIES;
 
+  const fallbackPreset =
+    presets[0] ?? SIEGE_TARGET_PRESETS[0] ?? { id: 'city-4', label: '4렙 공성지', level: 4, baseCost: 500 };
+
   const preset =
-    presets.find((item) => item.id === target.presetId) ??
-    presets[presets.length - 1] ??
-    SIEGE_TARGET_PRESETS[SIEGE_TARGET_PRESETS.length - 1];
+    target.presetId === 'custom'
+      ? { id: 'custom', label: '직접 입력', level: null, baseCost: 0 }
+      : presets.find((item) => item.id === target.presetId) ?? fallbackPreset;
 
   const useCustomBase =
     target.presetId === 'custom' ||
@@ -115,7 +118,7 @@ export function calculateSiegeCost(target = {}, rules = {}) {
     ? 0
     : Math.max(1, Math.floor(clampNonNegative(target.distanceCount, 1)));
 
-  // 규칙 1([이릉의 결전] 전) 또는 규칙 3(동맹 성지 없음)이면 추가 거리 페널티 미적용
+  // 규칙 1(연결 규칙 미적용) 또는 규칙 3(동맹 성지 없음)이면 추가 거리 페널티 미적용
   const penaltyExemptReason = allianceHasNoCities
     ? 'no_city'
     : !connectionRuleActive
@@ -873,7 +876,7 @@ export function formatTimelineSummary(sim, { allianceName = '동맹', seasonName
     if (step.cost.penaltyExemptReason === 'no_city') {
       tags.push('성지 미보유 기본 소모');
     } else if (step.cost.penaltyExemptReason === 'pre_phase') {
-      tags.push('이릉의 결전 이전(연결 미적용)');
+      tags.push('성지 연결 규칙 미적용');
     } else if (step.cost.isConnected) {
       tags.push('관로 연결');
     } else {

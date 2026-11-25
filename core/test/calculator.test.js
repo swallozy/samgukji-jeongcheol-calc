@@ -47,6 +47,11 @@ test('W2 preset costs and ironworks levels match confirmed Korean server values'
   assert.equal(lv2.verified, true);
   assert.equal(SEASON_META.defaultCap, 10000);
   assert.equal(SEASON_META.defaultHourlyRate, 112);
+  assert.equal(
+    SIEGE_TARGET_PRESETS.some((p) => p.id === 'custom'),
+    false,
+    'Siege target presets should only include city/gate tiers without custom entry'
+  );
 });
 
 test('calculateSiegeCost applies official level-bracket × distance rules, pre-phase, no-city rule, and enemy +50%', () => {
@@ -82,7 +87,7 @@ test('calculateSiegeCost applies official level-bracket × distance rules, pre-p
   assert.equal(lv16TwoHops.penaltyCost, 6000);
   assert.equal(lv16TwoHops.totalCost, 9000);
 
-  // 규칙 1: 패업 [이릉의 결전] 단계 이전 => 연결 페널티 0
+  // 규칙 1: 성지 연결 규칙 미적용 상태 => 연결 페널티 0
   const prePhase = calculateSiegeCost(
     { presetId: 'city-16', isConnected: false, distanceCount: 2 },
     { connectionRuleActive: false }

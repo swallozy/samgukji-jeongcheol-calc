@@ -97,6 +97,21 @@ function createInitialState(nowMs = Date.now()) {
   };
 }
 
+function sanitizeTargetPreset(target, presets, fallbackId) {
+  if (!target || typeof target !== 'object') return target;
+  if (presets.some((p) => p.id === target.presetId)) return target;
+
+  const matchedByLevel =
+    target.customLevel !== undefined && target.customLevel !== null && target.customLevel !== ''
+      ? presets.find((p) => Number(p.level) === Number(target.customLevel))
+      : null;
+
+  return {
+    ...target,
+    presetId: matchedByLevel?.id ?? fallbackId,
+  };
+}
+
 function normalizeLoadedState(parsed, fresh) {
   const nowMs = fresh.anchorTimeMs;
   const singleTargetTimeMs =
@@ -107,6 +122,30 @@ function normalizeLoadedState(parsed, fresh) {
     Number.isFinite(parsed.targetCheckTimeMs) && parsed.targetCheckTimeMs >= nowMs
       ? parsed.targetCheckTimeMs
       : fresh.targetCheckTimeMs;
+
+  const cleanedPresets = Array.isArray(parsed.rules?.presets)
+    ? parsed.rules.presets.filter((p) => p.id !== 'custom')
+    : null;
+  const normalizedRules =
+    cleanedPresets && cleanedPresets.length > 0
+      ? { ...fresh.rules, ...parsed.rules, presets: cleanedPresets }
+      : fresh.rules;
+  const fallbackPresetId =
+    normalizedRules.presets.find((p) => p.id === 'city-11')?.id ??
+    normalizedRules.presets[0]?.id ??
+    'city-11';
+
+  const normalizedEvents = Array.isArray(parsed.events)
+    ? parsed.events.map((ev) => sanitizeTargetPreset(ev, normalizedRules.presets, fallbackPresetId))
+    : fresh.events;
+
+  const normalizedSingleTarget = parsed.singleTarget
+    ? sanitizeTargetPreset(
+        { ...fresh.singleTarget, ...parsed.singleTarget },
+        normalizedRules.presets,
+        fallbackPresetId
+      )
+    : fresh.singleTarget;
 
   return {
     ...fresh,
@@ -122,10 +161,8 @@ function normalizeLoadedState(parsed, fresh) {
       ? Number(parsed.targetGoalAmount)
       : fresh.targetGoalAmount,
     boosts: Array.isArray(parsed.boosts) ? parsed.boosts : fresh.boosts,
-    events: Array.isArray(parsed.events) ? parsed.events : fresh.events,
-    singleTarget: parsed.singleTarget
-      ? { ...fresh.singleTarget, ...parsed.singleTarget }
-      : fresh.singleTarget,
+    events: normalizedEvents,
+    singleTarget: normalizedSingleTarget,
     anchorStock: Number.isFinite(Number(parsed.anchorStock))
       ? Number(parsed.anchorStock)
       : Number.isFinite(Number(parsed.currentStock))
@@ -141,7 +178,7 @@ function normalizeLoadedState(parsed, fresh) {
         : 5,
     singleTargetTimeMs,
     targetCheckTimeMs,
-    rules: parsed.rules?.presets ? { ...fresh.rules, ...parsed.rules } : fresh.rules,
+    rules: normalizedRules,
   };
 }
 

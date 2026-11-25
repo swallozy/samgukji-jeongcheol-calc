@@ -274,7 +274,7 @@ export function StatusPanel({
         </div>
       </div>
 
-      {/* 접이식 시즌 연결 규칙 바 */}
+      {/* 접이식 성지 연결 규칙 바 */}
       <div className="collapsible-bar">
         <button
           type="button"
@@ -284,9 +284,9 @@ export function StatusPanel({
         >
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
             <ShieldAlert size={15} color="#e5a93c" />
-            <strong style={{ fontSize: '13.5px' }}>시즌 성지 연결 규칙 설정</strong>
+            <strong style={{ fontSize: '13.5px' }}>성지 연결 규칙</strong>
             <span className={`badge ${connectionRuleActive ? 'badge-gold' : 'badge-muted'}`}>
-              [{SEASON_META.connectionRulePhaseName}] {connectionRuleActive ? '적용 중' : '적용 전'}
+              {connectionRuleActive ? '적용 중' : '미적용'}
             </span>
             <span className={`badge ${allianceHasNoCities ? 'badge-amber' : 'badge-muted'}`}>
               {allianceHasNoCities ? '보유 성지 0개 (9렙↓ 기본만)' : '보유 성지 1개+'}
@@ -302,7 +302,7 @@ export function StatusPanel({
           <div className="collapsible-body">
             <div className="form-grid-2" style={{ marginTop: '12px' }}>
               <div className="field">
-                <label>패업 [{SEASON_META.connectionRulePhaseName}] 성지 연결 규칙</label>
+                <label>성지 연결 규칙</label>
                 <div className="toggle-group">
                   <button
                     type="button"
@@ -316,7 +316,7 @@ export function StatusPanel({
                     className={`toggle-option ${!connectionRuleActive ? 'active' : ''}`}
                     onClick={() => onConnectionRuleActiveChange(false)}
                   >
-                    적용 전 (거리 페널티 없음)
+                    미적용 (거리 페널티 없음)
                   </button>
                 </div>
               </div>

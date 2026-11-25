@@ -49,7 +49,7 @@ export function ShareSummaryCard({
     singleResult.cost.penaltyExemptReason === 'no_city'
       ? '성지 미보유 기본 소모'
       : singleResult.cost.penaltyExemptReason === 'pre_phase'
-      ? '이릉 결전 이전(연결 미적용)'
+      ? '성지 연결 규칙 미적용'
       : singleResult.cost.isConnected
       ? '관로 연결'
       : `관로 미연결 ${singleResult.cost.distanceCount}칸 +${singleResult.cost.penaltyCost.toLocaleString()}`;

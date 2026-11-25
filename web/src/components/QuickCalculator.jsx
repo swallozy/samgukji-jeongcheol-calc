@@ -164,7 +164,7 @@ export function QuickCalculator({
               <div className="alert-line warn num">
                 <span>
                   ⚠️ 목표 시각 전에 보유 상한({cap.toLocaleString()})에 도달해{' '}
-                  <strong>{result.overflowLoss.toLocaleString()} 정철</strong>이 증발합니다. 중간 공성이나 주둔지 건설을 배치해 보세요.
+                  <strong>{result.overflowLoss.toLocaleString()} 정철</strong>이 증발합니다. 중간 공성이나 동맹 주둔지 건설을 배치해 보세요.
                 </span>
               </div>
             )}

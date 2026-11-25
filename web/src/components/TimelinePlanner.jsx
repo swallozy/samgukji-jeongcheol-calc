@@ -205,7 +205,7 @@ export function TimelinePlanner({
                         {step.cost.penaltyExemptReason === 'no_city' ? (
                           <span className="badge badge-muted">성지 미보유 기본</span>
                         ) : step.cost.penaltyExemptReason === 'pre_phase' ? (
-                          <span className="badge badge-muted">이릉 결전 전</span>
+                          <span className="badge badge-muted">연결 규칙 미적용</span>
                         ) : step.cost.isConnected ? (
                           <span className="badge badge-muted">
                             {index > 0 ? '관로 연결(자동)' : '관로 연결'}

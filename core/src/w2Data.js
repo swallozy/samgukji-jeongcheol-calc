@@ -37,19 +37,11 @@ export const SIEGE_TARGET_PRESETS = [
   { id: 'city-16', label: '16렙 공성지', category: '성지', level: 16, baseCost: 3000, verified: true },
   { id: 'city-18', label: '18렙 공성지', category: '성지', level: 18, baseCost: 4500, verified: true },
   { id: 'city-20', label: '20렙 공성지', category: '성지', level: 20, baseCost: 6000, verified: true },
-  {
-    id: 'custom',
-    label: '직접 입력 (난공불락 / 기타 등급)',
-    category: '기타',
-    level: null,
-    baseCost: 0,
-    verified: false,
-  },
 ];
 
 /**
  * 인게임 [성지 연결 규칙] — 목표 성지·관문 레벨별 거리 간격 1칸당 정철 증가량
- * - 패업 [이릉의 결전] 단계부터 적용
+ * - 성지 연결 규칙 적용 시 거리 페널티 산정
  * - 동맹에 성지가 없을 경우 9레벨 이하만 점령 가능하며 기본 수량만 소모
  */
 export const LEVEL_BRACKET_PENALTIES = [
