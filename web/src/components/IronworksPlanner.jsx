@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, Hammer, Plus, Trash2 } from 'lucide-react';
 import { IRONWORKS_LEVELS } from '@jeongcheol/core';
-import { fromLocalDateTimeInput, toLocalDateTimeInput } from '../utils/time.js';
+import { DateTimePicker } from './DateTimePicker.jsx';
 
 export function IronworksPlanner({ boosts, baseTimeMs, onAddBoost, onUpdateBoost, onRemoveBoost }) {
   const [expanded, setExpanded] = useState(() => boosts.length > 0);
@@ -162,18 +162,11 @@ export function IronworksPlanner({ boosts, baseTimeMs, onAddBoost, onUpdateBoost
                         즉시
                       </button>
                     </label>
-                    <input
-                      type="datetime-local"
-                      className="input num"
-                      value={
-                        boost.effectiveAt
-                          ? toLocalDateTimeInput(boost.effectiveAt)
-                          : toLocalDateTimeInput(baseTimeMs)
-                      }
-                      onChange={(e) => {
-                        const ms = fromLocalDateTimeInput(e.target.value);
-                        onUpdateBoost(boost.id, { effectiveAt: Number.isFinite(ms) ? ms : '' });
-                      }}
+                    <DateTimePicker
+                      variant="popover"
+                      minTimeMs={baseTimeMs}
+                      valueMs={boost.effectiveAt ? Number(boost.effectiveAt) : baseTimeMs}
+                      onChange={(ms) => onUpdateBoost(boost.id, { effectiveAt: ms })}
                     />
                   </div>
 

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { formatDateTimeKST, formatDuration } from '@jeongcheol/core';
 import { SiegeTargetForm } from './SiegeTargetForm.jsx';
-import { fromLocalDateTimeInput, toLocalDateTimeInput } from '../utils/time.js';
+import { DateTimePicker } from './DateTimePicker.jsx';
 
 export function TimelinePlanner({
   baseTimeMs,
@@ -135,15 +135,12 @@ export function TimelinePlanner({
             }}
           >
             <div className="field">
-              <label>공성 예정 시각</label>
-              <input
-                type="datetime-local"
-                className="input num"
-                value={toLocalDateTimeInput(draft.scheduledAt)}
-                onChange={(e) => {
-                  const ms = fromLocalDateTimeInput(e.target.value);
-                  if (Number.isFinite(ms)) setDraft((prev) => ({ ...prev, scheduledAt: ms }));
-                }}
+              <label>공성 예정 시각 (현재 이후)</label>
+              <DateTimePicker
+                variant="inline"
+                minTimeMs={baseTimeMs}
+                valueMs={draft.scheduledAt}
+                onChange={(ms) => setDraft((prev) => ({ ...prev, scheduledAt: ms }))}
               />
             </div>
 
@@ -246,17 +243,11 @@ export function TimelinePlanner({
                     </div>
 
                     <div className="step-controls-row">
-                      <input
-                        type="datetime-local"
-                        className="input num"
-                        style={{ width: 'auto', minHeight: '34px', padding: '5px 10px', fontSize: '13px' }}
-                        value={toLocalDateTimeInput(step.scheduledMs)}
-                        onChange={(e) => {
-                          const ms = fromLocalDateTimeInput(e.target.value);
-                          if (Number.isFinite(ms)) {
-                            onUpdateEvent(step.id, { scheduledAt: ms });
-                          }
-                        }}
+                      <DateTimePicker
+                        variant="popover"
+                        minTimeMs={baseTimeMs}
+                        valueMs={step.scheduledMs}
+                        onChange={(ms) => onUpdateEvent(step.id, { scheduledAt: ms })}
                       />
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <button

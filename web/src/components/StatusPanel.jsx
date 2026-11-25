@@ -15,11 +15,8 @@ import {
   Target,
 } from 'lucide-react';
 import { formatDateTimeKST, formatDuration, SEASON_META } from '@jeongcheol/core';
-import {
-  fromLocalDateTimeInput,
-  getNextClockHourMs,
-  toLocalDateTimeInput,
-} from '../utils/time.js';
+import { DateTimePicker } from './DateTimePicker.jsx';
+import { getNextClockHourMs } from '../utils/time.js';
 
 export function StatusPanel({
   allianceName,
@@ -168,15 +165,14 @@ export function StatusPanel({
             <span>기준 시각</span>
             <Clock size={13} />
           </label>
-          <input
+          <DateTimePicker
             id="base-time-input"
-            type="datetime-local"
-            className="input num"
-            value={toLocalDateTimeInput(baseTimeMs)}
-            onChange={(e) => {
-              const nextMs = fromLocalDateTimeInput(e.target.value);
-              if (Number.isFinite(nextMs)) onBaseTimeChange(nextMs);
-            }}
+            variant="popover"
+            allowPast
+            showNudge={false}
+            valueMs={baseTimeMs}
+            onChange={onBaseTimeChange}
+            showQuickPresets={false}
           />
         </div>
 
@@ -464,16 +460,14 @@ export function StatusPanel({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div className="target-reach-grid">
               <div className="field">
-                <label htmlFor="target-check-time-input">확인할 날짜 · 시각</label>
-                <input
+                <label htmlFor="target-check-time-input">확인할 날짜 · 시각 (현재 이후)</label>
+                <DateTimePicker
                   id="target-check-time-input"
-                  type="datetime-local"
-                  className="input num"
-                  value={toLocalDateTimeInput(targetCheckTimeMs)}
-                  onChange={(e) => {
-                    const ms = fromLocalDateTimeInput(e.target.value);
-                    if (Number.isFinite(ms)) onTargetCheckTimeChange(ms);
-                  }}
+                  variant="popover"
+                  minTimeMs={baseTimeMs}
+                  valueMs={targetCheckTimeMs}
+                  onChange={onTargetCheckTimeChange}
+                  quickPresets={quickCheckTimes}
                 />
                 <div className="chip-row">
                   {quickCheckTimes.map((preset) => (

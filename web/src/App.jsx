@@ -323,6 +323,11 @@ export function App() {
     ]
   );
 
+  const safeTargetCheckTimeMs = Math.max(
+    effectiveBaseTimeMs,
+    state.targetCheckTimeMs ?? effectiveBaseTimeMs + 24 * 3600000
+  );
+
   const stockAtTime = useMemo(
     () =>
       calculateStockAtTime({
@@ -330,7 +335,7 @@ export function App() {
         baseHourlyRate: state.baseHourlyRate,
         cap: state.cap,
         baseTime: effectiveBaseTimeMs,
-        targetTime: state.targetCheckTimeMs ?? effectiveBaseTimeMs + 24 * 3600000,
+        targetTime: safeTargetCheckTimeMs,
         boosts: state.boosts,
       }),
     [
@@ -338,7 +343,7 @@ export function App() {
       state.baseHourlyRate,
       state.cap,
       effectiveBaseTimeMs,
-      state.targetCheckTimeMs,
+      safeTargetCheckTimeMs,
       state.boosts,
     ]
   );
@@ -649,8 +654,10 @@ export function App() {
           targetGoalAmount={state.targetGoalAmount ?? 6000}
           onTargetGoalAmountChange={(targetGoalAmount) => updateState({ targetGoalAmount })}
           targetReach={targetReach}
-          targetCheckTimeMs={state.targetCheckTimeMs ?? effectiveBaseTimeMs + 24 * 3600000}
-          onTargetCheckTimeChange={(targetCheckTimeMs) => updateState({ targetCheckTimeMs })}
+          targetCheckTimeMs={safeTargetCheckTimeMs}
+          onTargetCheckTimeChange={(targetCheckTimeMs) =>
+            updateState({ targetCheckTimeMs: Math.max(effectiveBaseTimeMs, targetCheckTimeMs) })
+          }
           stockAtTime={stockAtTime}
         />
 
@@ -709,8 +716,10 @@ export function App() {
               rules={state.rules}
               target={state.singleTarget}
               onTargetChange={(singleTarget) => updateState({ singleTarget })}
-              targetTimeMs={state.singleTargetTimeMs}
-              onTargetTimeChange={(singleTargetTimeMs) => updateState({ singleTargetTimeMs })}
+              targetTimeMs={Math.max(effectiveBaseTimeMs, state.singleTargetTimeMs)}
+              onTargetTimeChange={(singleTargetTimeMs) =>
+                updateState({ singleTargetTimeMs: Math.max(effectiveBaseTimeMs, singleTargetTimeMs) })
+              }
               onAddToTimeline={handleAddEvent}
             />
           ) : (

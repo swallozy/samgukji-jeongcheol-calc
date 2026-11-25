@@ -6,11 +6,7 @@ import {
   formatDuration,
 } from '@jeongcheol/core';
 import { SiegeTargetForm } from './SiegeTargetForm.jsx';
-import {
-  fromLocalDateTimeInput,
-  getNextClockHourMs,
-  toLocalDateTimeInput,
-} from '../utils/time.js';
+import { DateTimePicker } from './DateTimePicker.jsx';
 
 export function QuickCalculator({
   baseTimeMs,
@@ -25,12 +21,14 @@ export function QuickCalculator({
   onTargetTimeChange,
   onAddToTimeline,
 }) {
+  const safeTargetTimeMs = Math.max(baseTimeMs, targetTimeMs);
+
   const result = calculateSingleSiege({
     currentStock,
     baseHourlyRate,
     cap,
     baseTime: baseTimeMs,
-    targetTime: targetTimeMs,
+    targetTime: safeTargetTimeMs,
     target,
     boosts,
     rules,
@@ -57,7 +55,7 @@ export function QuickCalculator({
           <button
             type="button"
             className="btn btn-gold btn-sm"
-            onClick={() => onAddToTimeline({ ...target, scheduledAt: targetTimeMs })}
+            onClick={() => onAddToTimeline({ ...target, scheduledAt: safeTargetTimeMs })}
           >
             <CalendarPlus size={15} />
             타임라인 일정에 추가
@@ -72,35 +70,13 @@ export function QuickCalculator({
               <span>목표 공성 / 공성 주둔지 건설 시각</span>
               <Clock size={13} />
             </label>
-            <input
+            <DateTimePicker
               id="single-target-time"
-              type="datetime-local"
-              className="input num"
-              value={toLocalDateTimeInput(targetTimeMs)}
-              onChange={(e) => {
-                const ms = fromLocalDateTimeInput(e.target.value);
-                if (Number.isFinite(ms)) onTargetTimeChange(ms);
-              }}
+              variant="inline"
+              minTimeMs={baseTimeMs}
+              valueMs={safeTargetTimeMs}
+              onChange={onTargetTimeChange}
             />
-            <div className="chip-row">
-              {[
-                { label: '+1시간', ms: baseTimeMs + 1 * 3600000 },
-                { label: '+3시간', ms: baseTimeMs + 3 * 3600000 },
-                { label: '+6시간', ms: baseTimeMs + 6 * 3600000 },
-                { label: '+12시간', ms: baseTimeMs + 12 * 3600000 },
-                { label: '오늘/다음 21:00', ms: getNextClockHourMs(baseTimeMs, 21, false) },
-                { label: '내일 21:00', ms: getNextClockHourMs(baseTimeMs, 21, true) },
-              ].map((preset) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  className="chip"
-                  onClick={() => onTargetTimeChange(preset.ms)}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className={`result-banner ${bannerClass}`}>
@@ -190,12 +166,6 @@ export function QuickCalculator({
                   ⚠️ 목표 시각 전에 보유 상한({cap.toLocaleString()})에 도달해{' '}
                   <strong>{result.overflowLoss.toLocaleString()} 정철</strong>이 증발합니다. 중간 공성이나 주둔지 건설을 배치해 보세요.
                 </span>
-              </div>
-            )}
-
-            {result.isInvalidTargetTime && (
-              <div className="alert-line danger">
-                <span>목표 시각이 기준 시각보다 이전이어서 기준 시각 시점으로 계산되었습니다.</span>
               </div>
             )}
           </div>
