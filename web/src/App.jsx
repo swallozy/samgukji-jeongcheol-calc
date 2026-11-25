@@ -9,6 +9,7 @@ import {
   Shield,
 } from 'lucide-react';
 import {
+  alignToTickGrid,
   buildRateSchedule,
   calculateStockAtTime,
   calculateTargetReach,
@@ -241,8 +242,9 @@ export function App() {
         baseHourlyRate: state.baseHourlyRate,
         cap: state.cap,
         boosts: state.boosts,
-        tickIntervalMinutes: 5,
+        tickIntervalMinutes: SEASON_META.tickIntervalMinutes,
         alignToClockGrid: true,
+        gridOffsetMs: SEASON_META.tickGridOffsetMs,
       }),
     [
       state.anchorStock,
@@ -279,8 +281,9 @@ export function App() {
         baseHourlyRate: prev.baseHourlyRate,
         cap: prev.cap,
         boosts: prev.boosts,
-        tickIntervalMinutes: 5,
+        tickIntervalMinutes: SEASON_META.tickIntervalMinutes,
         alignToClockGrid: true,
+        gridOffsetMs: SEASON_META.tickGridOffsetMs,
       });
       return {
         ...prev,
@@ -386,7 +389,9 @@ export function App() {
     setLiveNowMs(now);
     updateState({
       anchorStock: nextStock,
-      anchorTimeMs: state.autoSyncEnabled ? Math.floor(now / 300000) * 300000 : state.anchorTimeMs,
+      anchorTimeMs: state.autoSyncEnabled
+        ? alignToTickGrid(now, SEASON_META.tickIntervalMinutes * 60000, SEASON_META.tickGridOffsetMs)
+        : state.anchorTimeMs,
     });
   };
 
@@ -405,7 +410,11 @@ export function App() {
       updateState({
         autoSyncEnabled: true,
         anchorStock: effectiveCurrentStock,
-        anchorTimeMs: Math.floor(now / 300000) * 300000,
+        anchorTimeMs: alignToTickGrid(
+          now,
+          SEASON_META.tickIntervalMinutes * 60000,
+          SEASON_META.tickGridOffsetMs
+        ),
       });
     } else {
       updateState({

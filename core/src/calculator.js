@@ -453,10 +453,16 @@ export function calculateTargetReach({
   };
 }
 
+export function alignToTickGrid(epochMs, tickMs, gridOffsetMs = 0) {
+  if (!Number.isFinite(tickMs) || tickMs <= 0) return epochMs;
+  const normalizedOffset = ((gridOffsetMs % tickMs) + tickMs) % tickMs;
+  return Math.floor((epochMs - normalizedOffset) / tickMs) * tickMs + normalizedOffset;
+}
+
 /**
  * 기준 시점(anchorTimeMs)과 기준 보유량(anchorStock)을 바탕으로
  * 현재 시각(nowMs) 기준의 누적 보유 정철을 계산합니다.
- * - tickIntervalMinutes > 0 (기본 5분): 고정 시계 주기(00·05·10...분)에 맞춰 일괄 정산
+ * - tickIntervalMinutes > 0 (기본 5분): 고정 시계 주기(+gridOffsetMs)에 맞춰 일괄 정산
  * - tickIntervalMinutes === 0: 연속/실시간 정산
  */
 export function resolveLiveAnchorStock({
@@ -466,8 +472,9 @@ export function resolveLiveAnchorStock({
   baseHourlyRate = SEASON_META.defaultHourlyRate,
   cap = SEASON_META.defaultCap,
   boosts = [],
-  tickIntervalMinutes = 5,
+  tickIntervalMinutes = SEASON_META.tickIntervalMinutes ?? 5,
   alignToClockGrid = true,
+  gridOffsetMs = 0,
 } = {}) {
   const safeAnchorMs = toEpochMs(anchorTimeMs);
   const safeNowMs = toEpochMs(nowMs);
@@ -478,11 +485,11 @@ export function resolveLiveAnchorStock({
 
   const anchorSlotMs =
     tickMs > 0 && alignToClockGrid
-      ? Math.floor(effectiveAnchorMs / tickMs) * tickMs
+      ? alignToTickGrid(effectiveAnchorMs, tickMs, gridOffsetMs)
       : effectiveAnchorMs;
   const nowSlotMs =
     tickMs > 0 && alignToClockGrid
-      ? Math.floor(effectiveNowMs / tickMs) * tickMs
+      ? alignToTickGrid(effectiveNowMs, tickMs, gridOffsetMs)
       : effectiveNowMs;
 
   if (effectiveNowMs <= effectiveAnchorMs || (tickMs > 0 && nowSlotMs <= anchorSlotMs)) {

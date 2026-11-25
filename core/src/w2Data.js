@@ -13,6 +13,9 @@ export const SEASON_META = {
   defaultHourlyRate: 112,
   connectionRulePhaseName: '이릉의 결전',
   noCityMaxLevel: 9,
+  // 인게임 실제 5분 틱(:x4:30, :x9:30 부근)에 맞춘 고정 그리드 오프셋(4분 20초)
+  tickIntervalMinutes: 5,
+  tickGridOffsetMs: (4 * 60 + 20) * 1000,
 };
 
 export const ENEMY_ZONE_MULTIPLIER = 1.5;

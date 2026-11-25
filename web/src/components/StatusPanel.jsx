@@ -144,10 +144,10 @@ export function StatusPanel({
           </h2>
           <p className="card-subtitle">
             {autoSyncEnabled
-              ? `매 5분(00·05·10분...) 고정 주기로 자동 정산됩니다. (기준: ${formatDateTimeKST(
+              ? `인게임 주기(매 5분 · :04/:09/:14...분 20초경)에 맞춰 자동 정산됩니다. (기준: ${formatDateTimeKST(
                   liveAnchor?.anchorSlotMs ?? anchorTimeMs
                 )} · ${Math.floor(anchorStock).toLocaleString()})`
-              : '수동 고정 모드입니다. 실시간 동기화를 켜면 매 5분 주기마다 보유 정철이 자동 갱신됩니다.'}
+              : '수동 고정 모드입니다. 실시간 동기화를 켜면 5분 주기마다 보유 정철이 자동 갱신됩니다.'}
           </p>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>

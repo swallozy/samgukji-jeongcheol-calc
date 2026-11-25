@@ -4,6 +4,7 @@ import {
   IRONWORKS_LEVELS,
   SEASON_META,
   SIEGE_TARGET_PRESETS,
+  alignToTickGrid,
   calculateSiegeCost,
   calculateSingleSiege,
   calculateStockAtTime,
@@ -370,4 +371,37 @@ test('resolveLiveAnchorStock mirrors 5-minute in-game ticks (820 -> 860 over 15m
   });
   assert.equal(midEntry.completedTicks, 1);
   assert.equal(midEntry.currentStock, 886);
+
+  // Server tick offset (:04:20, :09:20, :49:20, :54:20) prevents double tick at :50:00
+  // Enter 900 at 12:49:51 (after 12:49:32 tick); at 12:50:00 it stays 900, and ticks at 12:54:20
+  const offsetMs = SEASON_META.tickGridOffsetMs; // 4m 20s
+  const anchorAt4951 = BASE_TIME + (49 * 60 + 51) * 1000;
+  assert.equal(
+    alignToTickGrid(anchorAt4951, 5 * 60000, offsetMs),
+    BASE_TIME + (49 * 60 + 20) * 1000
+  );
+
+  const at5000 = resolveLiveAnchorStock({
+    anchorStock: 900,
+    anchorTimeMs: anchorAt4951,
+    nowMs: BASE_TIME + 50 * 60000,
+    baseHourlyRate: 160,
+    cap: 10000,
+    tickIntervalMinutes: 5,
+    gridOffsetMs: offsetMs,
+  });
+  assert.equal(at5000.completedTicks, 0);
+  assert.equal(at5000.currentStock, 900);
+
+  const at5420 = resolveLiveAnchorStock({
+    anchorStock: 900,
+    anchorTimeMs: anchorAt4951,
+    nowMs: BASE_TIME + (54 * 60 + 20) * 1000,
+    baseHourlyRate: 160,
+    cap: 10000,
+    tickIntervalMinutes: 5,
+    gridOffsetMs: offsetMs,
+  });
+  assert.equal(at5420.completedTicks, 1);
+  assert.equal(at5420.currentStock, 913);
 });
