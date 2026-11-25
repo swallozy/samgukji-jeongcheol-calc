@@ -41,28 +41,6 @@ export function SiegeTargetForm({ value, onChange, rules, isFirstNoCityStep = tr
               </option>
             ))}
           </select>
-          <div className="chip-row">
-            {[
-              { id: 'city-4', label: '4렙' },
-              { id: 'city-6', label: '6렙' },
-              { id: 'city-8', label: '8렙' },
-              { id: 'city-10', label: '10렙' },
-              { id: 'city-11', label: '11렙' },
-              { id: 'gate-11', label: '11관문' },
-              { id: 'city-16', label: '16렙' },
-            ]
-              .filter((quick) => presets.some((p) => p.id === quick.id))
-              .map((quick) => (
-                <button
-                  key={quick.id}
-                  type="button"
-                  className={`chip ${value.presetId === quick.id ? 'active' : ''}`}
-                  onClick={() => patch({ presetId: quick.id, customBaseCost: '' })}
-                >
-                  {quick.label}
-                </button>
-              ))}
-          </div>
         </div>
 
         <div className="field">
